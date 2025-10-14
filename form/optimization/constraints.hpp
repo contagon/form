@@ -41,6 +41,10 @@
 
 namespace form {
 
+using gtsam::symbol_shorthand::B;
+using gtsam::symbol_shorthand::V;
+using gtsam::symbol_shorthand::X;
+
 using ScanIndex = size_t;
 
 /// @brief Manages all the constraints between poses
@@ -59,15 +63,23 @@ public:
     // Just scaling to make sure priors & feature factors are balanced
     double planar_constraint_sigma = 0.1;
     gtsam::noiseModel::Base::shared_ptr pose_noise;
+    gtsam::noiseModel::Base::shared_ptr velocity_noise;
+    gtsam::noiseModel::Base::shared_ptr bias_noise;
     gtsam::LevenbergMarquardtParams opt_params;
 
     Params() {
       pose_noise = gtsam::noiseModel::Isotropic::Sigma(6, 1e-3);
+      velocity_noise = gtsam::noiseModel::Isotropic::Sigma(3, 1e-3);
+      bias_noise = gtsam::noiseModel::Isotropic::Sigma(6, 1e-2);
+
       opt_params = gtsam::LevenbergMarquardtParams();
       // We're super dense anyways, don't worry about the ordering
       opt_params.orderingType = gtsam::Ordering::NATURAL;
     }
   };
+
+  using ConstraintMap =
+      tsl::robin_map<ScanIndex, std::tuple<PlanePoint::Ptr, PointPoint::Ptr>>;
 
 private:
   /// @brief Parameters
@@ -88,8 +100,6 @@ private:
   /// @brief Linearization of previous matches & m_other_factors
   std::optional<gtsam::LinearContainerFactor> m_fast_linear = std::nullopt;
 
-  using ConstraintMap =
-      tsl::robin_map<ScanIndex, std::tuple<PlanePoint::Ptr, PointPoint::Ptr>>;
   using ConstraintMapMap = tsl::robin_map<ScanIndex, ConstraintMap>;
 
   /// @brief All the planar and point constraints between scans
@@ -124,10 +134,28 @@ public:
   /// @brief Marginalize out the given scans
   void marginalize(const std::vector<ScanIndex> &scans) noexcept;
 
+  void add_factor(const gtsam::NonlinearFactor::shared_ptr &factor) noexcept;
+
+  void add_imu_factor(const gtsam::PreintegratedCombinedMeasurements &imu) noexcept {
+    gtsam::CombinedImuFactor::shared_ptr factor =
+        boost::make_shared<gtsam::CombinedImuFactor>(X(m_scan - 1), V(m_scan - 1),
+                                                     X(m_scan), V(m_scan),
+                                                     B(m_scan - 1), B(m_scan), imu);
+    add_factor(factor);
+  }
+
+  /// @brief Initialize the constraint manager with the first pose
+  // TODO: Can I make std::optional take a reference?
+  std::tuple<size_t, ConstraintManager::ConstraintMap &> initialize(
+      const gtsam::Pose3 &pose,
+      std::optional<gtsam::imuBias::ConstantBias> bias = std::nullopt) noexcept;
+
   /// @brief Add in the next pose and increment everything internally
   ///
   /// Returns the current scan index and an reference to it's empty constraint map
-  std::tuple<size_t, ConstraintMap &> step(const gtsam::Pose3 &pose) noexcept;
+  std::tuple<size_t, ConstraintMap &>
+  step(const gtsam::Pose3 &pose,
+       std::optional<gtsam::Velocity3> vel = std::nullopt) noexcept;
 
   // ------------------------- Setters ------------------------- //
   /// @brief Update the internal values with new estimates
@@ -157,6 +185,18 @@ public:
 
   /// @brief Get the pose for the current scan
   const gtsam::Pose3 get_current_pose() const noexcept;
+
+  /// @brief Get velocity for a given scan
+  const gtsam::Vector3 get_velocity(const ScanIndex &scan) const noexcept;
+
+  /// @brief Get velocity for the current scan
+  const gtsam::Vector3 get_current_velocity() const noexcept;
+
+  /// @brief Get bias for a given scan
+  const gtsam::imuBias::ConstantBias get_bias(const ScanIndex &scan) const noexcept;
+
+  /// @brief Get bias for the current scan
+  const gtsam::imuBias::ConstantBias get_current_bias() const noexcept;
 
   /// @brief Get all the current state estimates
   const gtsam::Values &get_values() const noexcept { return m_values; }

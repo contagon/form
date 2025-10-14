@@ -27,9 +27,6 @@
 #include <gtsam/nonlinear/Values.h>
 #include <tuple>
 
-using gtsam::Pose3;
-using gtsam::symbol_shorthand::X;
-
 namespace form {
 bool is_empty(const std::tuple<PlanePoint::Ptr, PointPoint::Ptr> &constraints) {
   return std::get<0>(constraints)->num_constraints() == 0 &&
@@ -69,11 +66,6 @@ ConstraintManager::get_current_constraints() noexcept {
 }
 
 gtsam::Pose3 ConstraintManager::predict_next() const noexcept {
-  // Handle the case where scan = 0 and we haven't started yet
-  if (!initialized()) {
-    return gtsam::Pose3::Identity();
-  }
-
   size_t scan = m_scan + 1;
 
   bool prev_exists = scan > 0 && m_values.exists(X(scan - 1));
@@ -85,7 +77,8 @@ gtsam::Pose3 ConstraintManager::predict_next() const noexcept {
     const auto prev_prev_pose = get_pose(scan - 2);
     auto prediction = prev_pose * (prev_prev_pose.inverse() * prev_pose);
     // normalize rotation to avoid rounding errors
-    prediction = Pose3(prediction.rotation().normalized(), prediction.translation());
+    prediction =
+        gtsam::Pose3(prediction.rotation().normalized(), prediction.translation());
     return prediction;
   }
 
@@ -194,6 +187,17 @@ void ConstraintManager::marginalize(const std::vector<ScanIndex> &scans) noexcep
   }
 }
 
+void ConstraintManager::add_factor(
+    const gtsam::NonlinearFactor::shared_ptr &factor) noexcept {
+  if (m_empty_slots.empty()) {
+    m_other_factors.push_back(factor);
+  } else {
+    m_other_factors.replace(m_empty_slots.back(), factor);
+    m_empty_slots.pop_back();
+  }
+  m_fast_linear = std::nullopt;
+}
+
 // ------------------------- Setters ------------------------- //
 void ConstraintManager::update_values(const gtsam::Values &values) noexcept {
   if (m_values.size() == values.size()) {
@@ -203,21 +207,42 @@ void ConstraintManager::update_values(const gtsam::Values &values) noexcept {
   }
 }
 
-std::tuple<size_t, ConstraintManager::ConstraintMap &>
-ConstraintManager::step(const gtsam::Pose3 &pose) noexcept {
-  // Only increment the scan if we've already initialized
-  // Skips incrementing for the first scan
-  if (initialized()) {
-    ++m_scan;
+std::tuple<size_t, ConstraintManager::ConstraintMap &> ConstraintManager::initialize(
+    const gtsam::Pose3 &pose,
+    std::optional<gtsam::imuBias::ConstantBias> bias) noexcept {
+  m_scan = 0;
+
+  // Handle the pose
+  m_values.insert(X(0), pose);
+  m_other_factors.addPrior(X(0), pose, m_params.pose_noise);
+
+  if (bias.has_value()) {
+    // Velocity
+    gtsam::Velocity3 zero_vel = gtsam::Velocity3::Zero();
+    m_values.insert(V(0), zero_vel);
+    m_other_factors.addPrior(V(0), zero_vel, m_params.velocity_noise);
+
+    // And bias
+    m_values.insert(B(0), *bias);
+    m_other_factors.addPrior(B(0), *bias, m_params.bias_noise);
   }
+
+  return std::tie(m_scan, get_current_constraints());
+}
+
+std::tuple<size_t, ConstraintManager::ConstraintMap &>
+ConstraintManager::step(const gtsam::Pose3 &pose,
+                        std::optional<gtsam::Velocity3> vel) noexcept {
+  ++m_scan;
 
   m_values.insert(X(m_scan), pose);
-  m_fast_linear = std::nullopt;
-
-  // If this is the first scan, add a prior
-  if (m_scan == 0) {
-    m_other_factors.addPrior(X(0), pose, m_params.pose_noise);
+  if (vel.has_value()) {
+    m_values.insert(V(m_scan), *vel);
+    // Use previous bias as initial guess
+    m_values.insert(B(m_scan), get_bias(m_scan - 1));
   }
+
+  m_fast_linear = std::nullopt;
 
   return std::tie(m_scan, get_current_constraints());
 }
@@ -314,6 +339,25 @@ ConstraintManager::get_pose(const ScanIndex &scan) const noexcept {
 
 const gtsam::Pose3 ConstraintManager::get_current_pose() const noexcept {
   return get_pose(m_scan);
+}
+
+const gtsam::Vector3
+ConstraintManager::get_velocity(const ScanIndex &scan) const noexcept {
+  return m_values.at<gtsam::Vector3>(V(scan));
+}
+
+const gtsam::Vector3 ConstraintManager::get_current_velocity() const noexcept {
+  return get_velocity(m_scan);
+}
+
+const gtsam::imuBias::ConstantBias
+ConstraintManager::get_bias(const ScanIndex &scan) const noexcept {
+  return m_values.at<gtsam::imuBias::ConstantBias>(B(scan));
+}
+
+const gtsam::imuBias::ConstantBias
+ConstraintManager::get_current_bias() const noexcept {
+  return get_bias(m_scan);
 }
 
 const size_t

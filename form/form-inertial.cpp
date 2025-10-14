@@ -19,8 +19,10 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
-#include "form/form.hpp"
+#include "form/form-inertial.hpp"
 #include "form/utils.hpp"
+#include <gtsam/navigation/NavState.h>
+#include <optional>
 
 namespace form {
 
@@ -28,38 +30,70 @@ using gtsam::Pose3;
 using gtsam::Velocity3;
 using gtsam::symbol_shorthand::X;
 
-Estimator::Estimator(const Estimator::Params &params) noexcept
+InertialEstimator::InertialEstimator(
+    const InertialEstimator::Params &params) noexcept
     : m_params(params), m_extractor(params.extraction, params.num_threads),
       m_constraints(params.constraints),
       m_matcher{Matcher<PlanarFeat>(params.matcher, params.num_threads),
                 Matcher<PointFeat>(params.matcher, params.num_threads)},
-      m_keyscanner(params.scans),
-      m_keypoint_map{KeypointMap<PlanarFeat>(m_params.map),
-                     KeypointMap<PointFeat>(m_params.map)} {}
+      m_keyscanner(params.scans), m_keypoint_map{KeypointMap<PlanarFeat>(params.map),
+                                                 KeypointMap<PointFeat>(params.map)},
+      m_imu(params.imu) {}
+
+std::optional<Stamped<gtsam::NavState>>
+InertialEstimator::register_imu(const Imu &imu) {
+  return m_imu.register_imu(imu);
+}
 
 std::tuple<std::vector<PlanarFeat>, std::vector<PointFeat>>
-Estimator::register_scan(const std::vector<Eigen::Vector3f> &scan) noexcept {
+InertialEstimator::register_scan(const std::vector<Eigen::Vector3f> &scan,
+                                 const Stamp &stamp) noexcept {
   constexpr auto SEQ = std::make_index_sequence<2>{};
+
+  // TODO: Right now we're assuming all IMU measurements / LiDAR scans are coming in
+  // order. Need to check other systems to see how it's handled robustly
+  // TODO: Have to make sure stamp is within the IMU range (likely prior to here)
+  // TODO: This isn't adding the keypoints to the map... needs to be handled
+  // differently
+  if (!m_constraints.initialized()) {
+    auto kp = m_extractor.extract(scan, 0);
+    // Try to align with gravity if we have enough IMU data
+    auto aligned = m_imu.compute_gravity_alignment();
+    if (!aligned.has_value()) {
+      return kp;
+    }
+    // Initialize everything with correct pose
+    m_constraints.initialize(aligned->first, aligned->second);
+    return kp;
+  }
 
   //
   // ############################ Feature Extraction ############################ //
   //
   // ------------------------------ Initialization ------------------------------ //
   // This needs to go first to get the scan index
-  Pose3 prediction = m_constraints.predict_next();
+  gtsam::NavState prediction = m_imu.at(stamp);
   auto [scan_idx, scan_constraints] =
-      !m_constraints.initialized()
-          ? m_constraints.initialize(gtsam::Pose3::Identity())
-          : m_constraints.step(prediction);
+      m_constraints.step(prediction.pose(), prediction.v());
 
   // ----------------------------- Extract Features ----------------------------- //
-  const auto keypoints = m_extractor.extract(scan, scan_idx);
+  auto keypoints = m_extractor.extract(scan, scan_idx);
   const auto num_keypoints =
       std::apply([](auto &...kps) { return (kps.size() + ...); }, keypoints);
+
+  // Transform them into IMU frame
+  tuple::for_each(keypoints, [&](auto &kps) {
+    for (auto &kp : kps) {
+      kp.transform_in_place(m_params.imu.imu_T_lidar);
+    }
+  });
 
   //
   // ############################### Optimization ############################### //
   //
+  // ---------------------------- Add in IMU Factor ---------------------------- //
+  m_constraints.add_imu_factor(m_imu.preintegrate(m_imu.oldest().stamp, stamp));
+
   // ---------------------------- Generate World Map ---------------------------- //
   const auto world_map = tuple::transform(m_keypoint_map, [&](auto &map) {
     return map.to_voxel_map(m_constraints.get_values(),
@@ -98,6 +132,12 @@ Estimator::register_scan(const std::vector<Eigen::Vector3f> &scan) noexcept {
   //
   // ################################## Mapping ################################## //
   //
+  // ---------------------------- Update IMU Handler ---------------------------- //
+  auto bias = m_constraints.get_current_bias();
+  auto nav_state = gtsam::NavState(m_constraints.get_current_pose(),
+                                   m_constraints.get_current_velocity());
+  m_imu.update_from(stamp, nav_state, bias);
+
   // ------------------------------ Map insertions ------------------------------ //
   tuple::for_seq(SEQ, [&](auto I) {
     std::get<I>(m_keypoint_map).insert_matches(std::get<I>(m_matcher).get_matches());

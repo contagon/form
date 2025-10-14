@@ -146,6 +146,24 @@ VoxelMap<Point> KeypointMap<Point>::to_voxel_map(const gtsam::Values &values,
 }
 
 template <typename Point>
+std::vector<Point>
+KeypointMap<Point>::to_vector(const gtsam::Values &values) const noexcept {
+  std::vector<Point> world_keypoints;
+  world_keypoints.reserve(num_keypoints());
+  // Iterate over all the keypoints in the map
+  for (const auto &[scan_index, keypoints] : m_scan_keypoints) {
+    // Get the pose of the scan
+    const auto &world_T_scan = values.at<gtsam::Pose3>(X(scan_index));
+
+    // Transform each keypoint into the world scan and add it to the vector
+    for (const auto &keypoint : keypoints) {
+      world_keypoints.push_back(keypoint.transform(world_T_scan));
+    }
+  }
+  return world_keypoints;
+}
+
+template <typename Point>
 void KeypointMap<Point>::insert_matches(
     const tbb::concurrent_vector<Match<Point>> &matches) {
   // Infer the scan
@@ -164,4 +182,11 @@ void KeypointMap<Point>::insert_matches(
   }
 }
 
+template <typename Point> size_t KeypointMap<Point>::num_keypoints() const noexcept {
+  size_t total = 0;
+  for (const auto &[_, keypoints] : m_scan_keypoints) {
+    total += keypoints.size();
+  }
+  return total;
+}
 } // namespace form

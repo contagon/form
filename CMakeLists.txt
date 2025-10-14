@@ -33,6 +33,8 @@ add_library(FORM
 	form/feature/factor.cpp
 	form/optimization/constraints.cpp
 	form/mapping/keyscanner.cpp
+	form/inertial/imu.cpp
+	form/form-inertial.cpp
 )
 target_sources(FORM
 	PUBLIC
@@ -50,8 +52,11 @@ target_sources(FORM
 		# mapping
 		form/mapping/map.hpp
 		form/mapping/keyscanner.hpp
+		# inertial
+		form/inertial/imu.hpp
 		# core
 		form/form.hpp
+		form/form-inertial.hpp
 		form/utils.hpp
 )
 target_link_libraries(FORM

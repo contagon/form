@@ -1,6 +1,6 @@
 pipelines:
   - pipeline: form
-    name: frame_to_scan
+    name: 1_inertial
 
 datasets:
   # ncd20
