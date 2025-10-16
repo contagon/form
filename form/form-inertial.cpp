@@ -55,6 +55,9 @@ InertialEstimator::register_scan(const std::vector<Eigen::Vector3f> &scan,
   // TODO: Have to make sure stamp is within the IMU range (likely prior to here)
   // TODO: This isn't adding the keypoints to the map... needs to be handled
   // differently
+
+  // Check if we're initialized, if not, do it!
+  // TODO: This doesn't add things to the map!
   if (!m_constraints.initialized()) {
     auto kp = m_extractor.extract(scan, 0);
     // Try to align with gravity if we have enough IMU data

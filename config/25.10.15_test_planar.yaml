@@ -1,0 +1,9 @@
+pipelines:
+  - pipeline: form
+    name: form_planar
+    point_feats_per_sector: 0
+
+datasets:
+    # ncd20
+  - name: newer_college_2020/short_experiment
+    length: 500

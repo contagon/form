@@ -76,6 +76,9 @@ struct InertialEstimator {
   /// @brief Inertial
   ImuHandler m_imu;
 
+  /// @brief Store the LiDAR scans until we get enough IMU data to handle
+  std::vector<std::pair<Stamp, std::vector<Eigen::Vector3f>>> m_scan_buffer;
+
   /// @brief Default constructor with default parameters
   InertialEstimator() : InertialEstimator(Params()) {}
 

@@ -1,0 +1,5 @@
+pipelines:
+  - form
+
+datasets:
+  - name: hilti_2022/basement_2

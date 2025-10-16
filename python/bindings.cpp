@@ -204,6 +204,7 @@ public:
   add_lidar(evalio::LidarMeasurement mm) override {
     // convert to evalio
     std::vector<Eigen::Vector3f> scan;
+    // send a stamp that is at the end of the scan
     auto end_ev = mm.stamp + delta_time_;
     auto end = form::Stamp{.sec = end_ev.sec, .nsec = end_ev.nsec};
     for (const auto &point : mm.points) {
