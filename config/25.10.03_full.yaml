@@ -1,7 +1,7 @@
 pipelines:
   - pipeline: mad
     num_keyframes: 4
-    realtime: true
+    realtime: false
   - ct
   - kiss
   - genz
