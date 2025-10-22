@@ -115,6 +115,12 @@ void ConstraintManager::marginalize(const std::vector<ScanIndex> &scans) noexcep
   gtsam::KeyVector keys;
   for (const auto &f : scans) {
     keys.push_back(X(f));
+    if (m_values.exists(V(f))) {
+      keys.push_back(V(f));
+    }
+    if (m_values.exists(B(f))) {
+      keys.push_back(B(f));
+    }
   }
 
   gtsam::NonlinearFactorGraph dropped_factors;
@@ -307,13 +313,17 @@ gtsam::NonlinearFactorGraph ConstraintManager::get_graph(bool fast) noexcept {
       }
       // Don't use linearizeToHessianFactor, as it linearizes sequentially.
       // More allocations this way, but it's quicker
-      const auto linear_graph = previous_matches.linearize(m_values);
-      gtsam::HessianFactor hessian(*linear_graph);
-      m_fast_linear = gtsam::LinearContainerFactor(hessian, m_values);
+      if (previous_matches.size() != 0) {
+        const auto linear_graph = previous_matches.linearize(m_values);
+        gtsam::HessianFactor hessian(*linear_graph);
+        m_fast_linear = gtsam::LinearContainerFactor(hessian, m_values);
+      }
     }
 
     // Add the fast linear factor
-    graph.push_back(*m_fast_linear);
+    if (m_fast_linear.has_value()) {
+      graph.push_back(*m_fast_linear);
+    }
   }
 
   // Do a full optimization with nothing linearized

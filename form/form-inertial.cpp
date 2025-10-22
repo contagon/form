@@ -20,8 +20,12 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 #include "form/form-inertial.hpp"
+#include "form/inertial/imu.hpp"
 #include "form/utils.hpp"
+#include <gtsam/inference/Symbol.h>
+#include <gtsam/navigation/ImuBias.h>
 #include <gtsam/navigation/NavState.h>
+#include <iostream>
 #include <optional>
 
 namespace form {
@@ -46,41 +50,41 @@ InertialEstimator::register_imu(const Imu &imu) {
 }
 
 std::tuple<std::vector<PlanarFeat>, std::vector<PointFeat>>
-InertialEstimator::register_scan(const std::vector<Eigen::Vector3f> &scan,
-                                 const Stamp &stamp) noexcept {
+InertialEstimator::register_single_scan(const PointCloud &scan) noexcept {
   constexpr auto SEQ = std::make_index_sequence<2>{};
-
-  // TODO: Right now we're assuming all IMU measurements / LiDAR scans are coming in
-  // order. Need to check other systems to see how it's handled robustly
-  // TODO: Have to make sure stamp is within the IMU range (likely prior to here)
-  // TODO: This isn't adding the keypoints to the map... needs to be handled
-  // differently
-
-  // Check if we're initialized, if not, do it!
-  // TODO: This doesn't add things to the map!
-  if (!m_constraints.initialized()) {
-    auto kp = m_extractor.extract(scan, 0);
-    // Try to align with gravity if we have enough IMU data
-    auto aligned = m_imu.compute_gravity_alignment();
-    if (!aligned.has_value()) {
-      return kp;
-    }
-    // Initialize everything with correct pose
-    m_constraints.initialize(aligned->first, aligned->second);
-    return kp;
-  }
+  Timer timer;
 
   //
   // ############################ Feature Extraction ############################ //
   //
   // ------------------------------ Initialization ------------------------------ //
+  // Try to get prediction from IMU if not initialized yet
+  gtsam::Pose3 pose;
+  gtsam::Velocity3 vel;
+  gtsam::imuBias::ConstantBias bias;
+  if (!m_constraints.initialized()) {
+    auto aligned = m_imu.compute_gravity_alignment();
+    if (!aligned.has_value()) {
+      throw std::runtime_error(
+          "InertialEstimator::register_single_scan: Trying to initialize "
+          "estimator without enough IMU data for gravity alignment.");
+    }
+    std::tie(pose, bias) = aligned.value();
+  } else {
+    gtsam::NavState nav_state = m_imu.at(scan.stamp);
+    pose = nav_state.pose();
+    vel = nav_state.v();
+  }
+
   // This needs to go first to get the scan index
-  gtsam::NavState prediction = m_imu.at(stamp);
-  auto [scan_idx, scan_constraints] =
-      m_constraints.step(prediction.pose(), prediction.v());
+  auto [scan_idx, scan_constraints] = !m_constraints.initialized()
+                                          ? m_constraints.initialize(pose, bias)
+                                          : m_constraints.step(pose, vel);
+  timer.elapsed("Initialization");
 
   // ----------------------------- Extract Features ----------------------------- //
-  auto keypoints = m_extractor.extract(scan, scan_idx);
+  auto keypoints = m_extractor.extract(scan.data, scan_idx);
+  auto keypoints_lidar = keypoints; // for returning in lidar frame
   const auto num_keypoints =
       std::apply([](auto &...kps) { return (kps.size() + ...); }, keypoints);
 
@@ -90,12 +94,17 @@ InertialEstimator::register_scan(const std::vector<Eigen::Vector3f> &scan,
       kp.transform_in_place(m_params.imu.imu_T_lidar);
     }
   });
+  timer.elapsed("Feature Extraction");
 
   //
   // ############################### Optimization ############################### //
   //
   // ---------------------------- Add in IMU Factor ---------------------------- //
-  m_constraints.add_imu_factor(m_imu.preintegrate(m_imu.oldest().stamp, stamp));
+  if (scan_idx != 0) {
+    m_constraints.add_imu_factor(
+        m_imu.preintegrate(m_imu.oldest().stamp, scan.stamp));
+  }
+  timer.elapsed("Add IMU Factor");
 
   // ---------------------------- Generate World Map ---------------------------- //
   const auto world_map = tuple::transform(m_keypoint_map, [&](auto &map) {
@@ -103,6 +112,20 @@ InertialEstimator::register_scan(const std::vector<Eigen::Vector3f> &scan,
                             // make voxel size match the max matching distance
                             m_params.matcher.max_dist_matching);
   });
+  timer.elapsed("Generate World Map");
+
+  // std::cout << "Values: ";
+  // for (auto key : m_constraints.get_values().keys()) {
+  //   std::cout << gtsam::Symbol(key) << " ";
+  // }
+  // std::cout << std::endl;
+  // std::cout << "Factors: ";
+  // for (const auto &factor : m_constraints.get_graph(true)) {
+  //   std::cout << "\n";
+  //   for (const auto &key : factor->keys()) {
+  //     std::cout << gtsam::Symbol(key) << " ";
+  //   }
+  // }
 
   // ICP loop
   gtsam::Values new_values;
@@ -127,36 +150,73 @@ InertialEstimator::register_scan(const std::vector<Eigen::Vector3f> &scan,
     }
     m_constraints.update_current_pose(after);
   }
+  timer.elapsed("ICP Loop Time");
 
   // ------------------------ Full Nonlinear Optimization ------------------------ //
   new_values = m_constraints.optimize(false);
   m_constraints.update_values(new_values);
+  timer.elapsed("Full Nonlinear Optimization Time");
 
   //
   // ################################## Mapping ################################## //
   //
   // ---------------------------- Update IMU Handler ---------------------------- //
-  auto bias = m_constraints.get_current_bias();
+  auto new_bias = m_constraints.get_current_bias();
   auto nav_state = gtsam::NavState(m_constraints.get_current_pose(),
                                    m_constraints.get_current_velocity());
-  m_imu.update_from(stamp, nav_state, bias);
+  m_imu.update_from(scan.stamp, nav_state, new_bias);
+  timer.elapsed("Update IMU Handler");
 
   // ------------------------------ Map insertions ------------------------------ //
   tuple::for_seq(SEQ, [&](auto I) {
     std::get<I>(m_keypoint_map).insert_matches(std::get<I>(m_matcher).get_matches());
   });
+  timer.elapsed("Map Insertions");
 
   // ---------------------------- Keyscan Selection ---------------------------- //
   const auto connections = [&](ScanIndex i) {
     return m_constraints.num_recent_connections(i, m_keyscanner.oldest_rf());
   };
   auto marg_scans = m_keyscanner.step(scan_idx, num_keypoints, connections);
+  timer.elapsed("Keyscan Selection");
 
   // ----------------------------- Marginalization ----------------------------- //
   m_constraints.marginalize(marg_scans);
   tuple::for_each(m_keypoint_map, [&](auto &map) { map.remove(marg_scans); });
+  timer.elapsed("Marginalization");
 
-  return keypoints;
+  std::cout << m_constraints.get_current_bias() << std::endl;
+
+  return keypoints_lidar;
+}
+
+std::optional<std::tuple<std::vector<PlanarFeat>, std::vector<PointFeat>>>
+InertialEstimator::register_scan(const std::vector<PointXYZf> &scan,
+                                 const Stamp &stamp) noexcept {
+
+  // Check if we should save the scan
+  if (m_scan.empty() || m_scan.back().stamp < stamp) {
+    m_scan.push_back(PointCloud{.stamp = stamp, .data = scan});
+  }
+
+  // TODO: This will delay processing LiDAR scans until we get enough IMU data
+  // This may cause issues with how evalio saves data
+  std::optional<std::tuple<std::vector<PlanarFeat>, std::vector<PointFeat>>> result =
+      std::nullopt;
+  while (
+      // Have scans
+      !m_scan.empty()
+      // Have IMU data
+      && !m_imu.empty()
+      // IMU data is newer than scan
+      && m_scan.front().stamp < m_imu.latest().stamp
+      // Either initialized or ready to initialize
+      && (m_constraints.initialized() || m_imu.ready_gravity_alignment())) {
+    result = register_single_scan(m_scan.front());
+    m_scan.pop_front();
+  }
+
+  return result;
 }
 
 } // namespace form

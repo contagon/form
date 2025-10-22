@@ -216,8 +216,11 @@ public:
     std::vector<form::PlanarFeat> planar_kp;
     std::vector<form::PointFeat> point_kp;
     if (fuse_imu_) {
-      std::tie(planar_kp, point_kp) = inertial_estimator_->register_scan(scan, end);
-      current_pose = pose_to_evalio(inertial_estimator_->current_estimate());
+      auto value = inertial_estimator_->register_scan(scan, end);
+      if (value.has_value()) {
+        std::tie(planar_kp, point_kp) = value.value();
+        current_pose = pose_to_evalio(inertial_estimator_->current_estimate());
+      };
     } else {
       std::tie(planar_kp, point_kp) = estimator_->register_scan(scan);
       current_pose = pose_to_evalio(estimator_->current_lidar_estimate() *

@@ -77,7 +77,8 @@ struct InertialEstimator {
   ImuHandler m_imu;
 
   /// @brief Store the LiDAR scans until we get enough IMU data to handle
-  std::vector<std::pair<Stamp, std::vector<Eigen::Vector3f>>> m_scan_buffer;
+  using PointCloud = Stamped<std::vector<PointXYZf>>;
+  std::deque<PointCloud> m_scan;
 
   /// @brief Default constructor with default parameters
   InertialEstimator() : InertialEstimator(Params()) {}
@@ -93,8 +94,11 @@ struct InertialEstimator {
 
   /// @brief Register a new scan and return the extracted features
   std::tuple<std::vector<PlanarFeat>, std::vector<PointFeat>>
-  register_scan(const std::vector<Eigen::Vector3f> &scan,
-                const Stamp &stamp) noexcept;
+  register_single_scan(const PointCloud &scan) noexcept;
+
+  /// @brief Register a new scan and return the extracted features
+  std::optional<std::tuple<std::vector<PlanarFeat>, std::vector<PointFeat>>>
+  register_scan(const std::vector<PointXYZf> &scan, const Stamp &stamp) noexcept;
 };
 
 } // namespace form

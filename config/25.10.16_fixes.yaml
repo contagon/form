@@ -1,0 +1,8 @@
+pipelines:
+  - pipeline: form
+    name: fix_master_3
+
+datasets:
+  - name: hilti_2022/attic_to_upper_gallery_2
+  - name: oxford_spires/blenheim_palace_05
+    length: 6000

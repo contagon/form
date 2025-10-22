@@ -117,6 +117,10 @@ std::optional<Stamped<gtsam::NavState>> ImuHandler::register_imu(const Imu &imu)
   return StampedNavState{.stamp = latest().stamp, .data = latest().nav_state};
 }
 
+bool ImuHandler::ready_gravity_alignment() const noexcept {
+  return m_buffer.size() >= m_params.initial_quota;
+}
+
 std::optional<std::pair<gtsam::Pose3, gtsam::imuBias::ConstantBias>>
 ImuHandler::compute_gravity_alignment() noexcept {
   Eigen::Vector3d imu_gravity = Eigen::Vector3d::Zero();
@@ -196,7 +200,7 @@ ImuHandler::preintegrate(const Stamp &start, const Stamp &end) const noexcept {
          "ImuHandler::preintegrate: no IMU data to preintegrate");
   assert(oldest().stamp == start &&
          "ImuHandler::preintegrate: start is not the oldest");
-  assert(latest().stamp >= end &&
+  assert(latest().stamp > end &&
          "ImuHandler::preintegrate: latest imu measurement is before end");
 
   // Skip to the correct time

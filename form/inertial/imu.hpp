@@ -101,6 +101,7 @@ public:
   // }
 
   // ------------------------- Getters ------------------------- //
+  bool ready_gravity_alignment() const noexcept;
   const gtsam::imuBias::ConstantBias &bias() const noexcept { return m_bias; }
   const ImuState &oldest() const noexcept { return m_buffer.front(); }
   const ImuState &latest() const noexcept { return m_buffer.back(); }
