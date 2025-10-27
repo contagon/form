@@ -1,14 +1,9 @@
 pipelines:
   - pipeline: form
-    name: 3_big_sweep
+    name: 9_cv_predict
     fuse_imu: true
     point_feats_per_sector: 0
-    sweep:
-      planar_sigma: geomspace(0.001, 0.2, 20)
-
-  # - pipeline: form
-  #   name: lo
-  #   point_feats_per_sector: 0
+    planar_sigma: 0.01
 
 datasets:
   - name: newer_college_2020/short_experiment

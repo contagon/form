@@ -64,11 +64,6 @@ InertialEstimator::register_single_scan(const PointCloud &scan) noexcept {
   gtsam::imuBias::ConstantBias bias;
   if (!m_constraints.initialized()) {
     auto aligned = m_imu.compute_gravity_alignment();
-    if (!aligned.has_value()) {
-      throw std::runtime_error(
-          "InertialEstimator::register_single_scan: Trying to initialize "
-          "estimator without enough IMU data for gravity alignment.");
-    }
     std::tie(pose, bias) = aligned.value();
   } else {
     gtsam::NavState nav_state = m_imu.at(scan.stamp);
@@ -77,9 +72,12 @@ InertialEstimator::register_single_scan(const PointCloud &scan) noexcept {
   }
 
   // This needs to go first to get the scan index
-  auto [scan_idx, scan_constraints] = !m_constraints.initialized()
-                                          ? m_constraints.initialize(pose, bias)
-                                          : m_constraints.step(pose, vel);
+  // const auto prediction = m_constraints.predict_next();
+  auto [scan_idx, scan_constraints] =
+      !m_constraints.initialized()
+          ? m_constraints.initialize(pose, bias)
+          // : m_constraints.step(prediction, m_constraints.get_current_velocity());
+          : m_constraints.step(pose, m_constraints.get_current_velocity());
   timer.elapsed("Initialization");
 
   // ----------------------------- Extract Features ----------------------------- //
@@ -113,19 +111,6 @@ InertialEstimator::register_single_scan(const PointCloud &scan) noexcept {
                             m_params.matcher.max_dist_matching);
   });
   timer.elapsed("Generate World Map");
-
-  // std::cout << "Values: ";
-  // for (auto key : m_constraints.get_values().keys()) {
-  //   std::cout << gtsam::Symbol(key) << " ";
-  // }
-  // std::cout << std::endl;
-  // std::cout << "Factors: ";
-  // for (const auto &factor : m_constraints.get_graph(true)) {
-  //   std::cout << "\n";
-  //   for (const auto &key : factor->keys()) {
-  //     std::cout << gtsam::Symbol(key) << " ";
-  //   }
-  // }
 
   // ICP loop
   gtsam::Values new_values;
@@ -161,10 +146,9 @@ InertialEstimator::register_single_scan(const PointCloud &scan) noexcept {
   // ################################## Mapping ################################## //
   //
   // ---------------------------- Update IMU Handler ---------------------------- //
-  auto new_bias = m_constraints.get_current_bias();
   auto nav_state = gtsam::NavState(m_constraints.get_current_pose(),
                                    m_constraints.get_current_velocity());
-  m_imu.update_from(scan.stamp, nav_state, new_bias);
+  m_imu.update_from(scan.stamp, nav_state, m_constraints.get_current_bias());
   timer.elapsed("Update IMU Handler");
 
   // ------------------------------ Map insertions ------------------------------ //
@@ -185,7 +169,9 @@ InertialEstimator::register_single_scan(const PointCloud &scan) noexcept {
   tuple::for_each(m_keypoint_map, [&](auto &map) { map.remove(marg_scans); });
   timer.elapsed("Marginalization");
 
-  std::cout << m_constraints.get_current_bias() << std::endl;
+  // Save pose
+  m_estimates.push_back(
+      Stamped<Pose3>{.stamp = scan.stamp, .data = m_constraints.get_current_pose()});
 
   return keypoints_lidar;
 }
@@ -199,8 +185,6 @@ InertialEstimator::register_scan(const std::vector<PointXYZf> &scan,
     m_scan.push_back(PointCloud{.stamp = stamp, .data = scan});
   }
 
-  // TODO: This will delay processing LiDAR scans until we get enough IMU data
-  // This may cause issues with how evalio saves data
   std::optional<std::tuple<std::vector<PlanarFeat>, std::vector<PointFeat>>> result =
       std::nullopt;
   while (
@@ -211,7 +195,9 @@ InertialEstimator::register_scan(const std::vector<PointXYZf> &scan,
       // IMU data is newer than scan
       && m_scan.front().stamp < m_imu.latest().stamp
       // Either initialized or ready to initialize
-      && (m_constraints.initialized() || m_imu.ready_gravity_alignment())) {
+      && (m_constraints.initialized() || m_imu.ready_gravity_alignment())
+      //
+  ) {
     result = register_single_scan(m_scan.front());
     m_scan.pop_front();
   }

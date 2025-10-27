@@ -504,7 +504,7 @@ wheels = [
 [[package]]
 name = "evalio"
 version = "0.4.0"
-source = { registry = "https://pypi.org/simple" }
+source = { directory = "../evalio" }
 dependencies = [
     { name = "asteval" },
     { name = "distinctipy" },
@@ -518,13 +518,44 @@ dependencies = [
     { name = "tqdm" },
     { name = "typer" },
 ]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a7/a1/3252c56b4403f0903913ba541950850025d46a2351253ad2ecd7c8c72d64/evalio-0.4.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:2607a6f082d0043cac41df9bbfda59f1c0984fbdce89293d0354d73d1751b121", size = 3349401, upload-time = "2025-10-15T18:46:36.534Z" },
-    { url = "https://files.pythonhosted.org/packages/cd/8d/077f2fe1435180f9a4fc6f1589dda2f8cb1ec44cfb232336f0fbc35e45e1/evalio-0.4.0-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:6a769465b8dc6cb29be30af287a5fd55b48e3b9fc5d3569c70d31cf666d37f50", size = 4031364, upload-time = "2025-10-15T18:46:38.304Z" },
-    { url = "https://files.pythonhosted.org/packages/86/8b/598f6a484b605a6c3d59247a276fdd5ea4d2d43c99504909cdc995c70ab7/evalio-0.4.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:b33d5c88c87c84ed638f41997e8c3b382315f3e06f93e22353d2b89f7ec7cf2e", size = 3348864, upload-time = "2025-10-15T18:46:39.684Z" },
-    { url = "https://files.pythonhosted.org/packages/88/c1/61edb429c4fd20bd6b36621249052a6bef1ca623f3c02e718c0299a3aacc/evalio-0.4.0-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:754a7fb2b188d09de1ec7d6779ade8524aee50dc970d1552ea842796a80bf387", size = 4027165, upload-time = "2025-10-15T18:46:41.095Z" },
-    { url = "https://files.pythonhosted.org/packages/ac/7d/7beb27341d5d228e1a37a975ee3bafdc6c8be18c824b2c2d1d71cb236f06/evalio-0.4.0-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:08290ea683f30db2252a50281ae6f935221ac1f9663cc543c285b1c7039e8f3c", size = 3348864, upload-time = "2025-10-15T18:46:42.824Z" },
-    { url = "https://files.pythonhosted.org/packages/e8/1f/05439ddedb7fe0e2a414c14d20fc61702f954c71214f842ca1c2291051ca/evalio-0.4.0-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:817fa3023215d431f81187aa247297dba848300865acb1093f25ae70f2b510f5", size = 4027167, upload-time = "2025-10-15T18:46:44.606Z" },
+
+[package.metadata]
+requires-dist = [
+    { name = "asteval", specifier = ">=1.0.6" },
+    { name = "distinctipy", specifier = ">=1.3.4" },
+    { name = "gdown", specifier = ">=5.2.0" },
+    { name = "joblib", specifier = ">=1.5.2" },
+    { name = "numpy" },
+    { name = "polars", specifier = ">=1.33.1" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "rapidfuzz", specifier = ">=3.12.2" },
+    { name = "rerun-sdk", marker = "extra == 'vis'", specifier = ">=0.25" },
+    { name = "rosbags", specifier = ">=0.10.10" },
+    { name = "tqdm", specifier = ">=4.66" },
+    { name = "typer", specifier = ">=0.15.3" },
+]
+provides-extras = ["vis"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "basedpyright", specifier = ">=1.31.4" },
+    { name = "bump-my-version", specifier = ">=1.1.1" },
+    { name = "cmake", specifier = "<4.0.0" },
+    { name = "compdb", specifier = ">=0.2.0" },
+    { name = "joblib-stubs", specifier = ">=1.5.2.0.20250831" },
+    { name = "mike", specifier = ">=2.1.3" },
+    { name = "mkdocs", specifier = ">=1.6.1" },
+    { name = "mkdocs-gen-files", specifier = ">=0.5.0" },
+    { name = "mkdocs-material", specifier = ">=9.6.11" },
+    { name = "mkdocstrings", extras = ["python"], specifier = ">=0.29.1" },
+    { name = "nanobind", specifier = ">=2.9.2" },
+    { name = "pytest", specifier = ">=8.3.5" },
+    { name = "ruff", specifier = ">=0.6.8" },
+    { name = "scipy", specifier = ">=1.15.2" },
+    { name = "scipy-stubs", specifier = ">=1.15.2.1" },
+    { name = "types-pyyaml", specifier = ">=6.0.12.20240917" },
+    { name = "types-tabulate", specifier = ">=0.9.0.20240106" },
+    { name = "types-tqdm", specifier = ">=4.66.0.20240417" },
 ]
 
 [[package]]
@@ -633,22 +664,26 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "py-spy" },
     { name = "snakeviz" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "evalio", specifier = ">=0.4" },
+    { name = "evalio", directory = "../evalio" },
     { name = "gradio-rerun", specifier = ">=0.24.0" },
     { name = "ipython", specifier = ">=9.5.0" },
     { name = "polars", specifier = ">=1.30.0" },
     { name = "pyvista", specifier = ">=0.46.3" },
-    { name = "rerun-sdk", specifier = ">=0.23" },
+    { name = "rerun-sdk", specifier = ">0.26" },
     { name = "seaborn", specifier = ">=0.13.2" },
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "snakeviz", specifier = ">=2.2.2" }]
+dev = [
+    { name = "py-spy", specifier = ">=0.4.1" },
+    { name = "snakeviz", specifier = ">=2.2.2" },
+]
 
 [[package]]
 name = "fsspec"
@@ -1734,6 +1769,21 @@ wheels = [
 ]
 
 [[package]]
+name = "py-spy"
+version = "0.4.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/19/e2/ff811a367028b87e86714945bb9ecb5c1cc69114a8039a67b3a862cef921/py_spy-0.4.1.tar.gz", hash = "sha256:e53aa53daa2e47c2eef97dd2455b47bb3a7e7f962796a86cc3e7dbde8e6f4db4", size = 244726, upload-time = "2025-07-31T19:33:25.172Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/14/e3/3a32500d845bdd94f6a2b4ed6244982f42ec2bc64602ea8fcfe900678ae7/py_spy-0.4.1-py2.py3-none-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:809094208c6256c8f4ccadd31e9a513fe2429253f48e20066879239ba12cd8cc", size = 3682508, upload-time = "2025-07-31T19:33:13.753Z" },
+    { url = "https://files.pythonhosted.org/packages/4f/bf/e4d280e9e0bec71d39fc646654097027d4bbe8e04af18fb68e49afcff404/py_spy-0.4.1-py2.py3-none-macosx_11_0_arm64.whl", hash = "sha256:1fb8bf71ab8df95a95cc387deed6552934c50feef2cf6456bc06692a5508fd0c", size = 1796395, upload-time = "2025-07-31T19:33:15.325Z" },
+    { url = "https://files.pythonhosted.org/packages/df/79/9ed50bb0a9de63ed023aa2db8b6265b04a7760d98c61eb54def6a5fddb68/py_spy-0.4.1-py2.py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:ee776b9d512a011d1ad3907ed53ae32ce2f3d9ff3e1782236554e22103b5c084", size = 2034938, upload-time = "2025-07-31T19:33:17.194Z" },
+    { url = "https://files.pythonhosted.org/packages/53/a5/36862e3eea59f729dfb70ee6f9e14b051d8ddce1aa7e70e0b81d9fe18536/py_spy-0.4.1-py2.py3-none-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:532d3525538254d1859b49de1fbe9744df6b8865657c9f0e444bf36ce3f19226", size = 2658968, upload-time = "2025-07-31T19:33:18.916Z" },
+    { url = "https://files.pythonhosted.org/packages/08/f8/9ea0b586b065a623f591e5e7961282ec944b5fbbdca33186c7c0296645b3/py_spy-0.4.1-py2.py3-none-manylinux_2_5_i686.manylinux1_i686.whl", hash = "sha256:4972c21890b6814017e39ac233c22572c4a61fd874524ebc5ccab0f2237aee0a", size = 2147541, upload-time = "2025-07-31T19:33:20.565Z" },
+    { url = "https://files.pythonhosted.org/packages/68/fb/bc7f639aed026bca6e7beb1e33f6951e16b7d315594e7635a4f7d21d63f4/py_spy-0.4.1-py2.py3-none-manylinux_2_5_x86_64.manylinux1_x86_64.whl", hash = "sha256:6a80ec05eb8a6883863a367c6a4d4f2d57de68466f7956b6367d4edd5c61bb29", size = 2763338, upload-time = "2025-07-31T19:33:22.202Z" },
+    { url = "https://files.pythonhosted.org/packages/e1/da/fcc9a9fcd4ca946ff402cff20348e838b051d69f50f5d1f5dca4cd3c5eb8/py_spy-0.4.1-py2.py3-none-win_amd64.whl", hash = "sha256:d92e522bd40e9bf7d87c204033ce5bb5c828fca45fa28d970f58d71128069fdc", size = 1818784, upload-time = "2025-07-31T19:33:23.802Z" },
+]
+
+[[package]]
 name = "pyarrow"
 version = "21.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2135,7 +2185,7 @@ wheels = [
 
 [[package]]
 name = "rerun-sdk"
-version = "0.25.1"
+version = "0.26.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "attrs" },
@@ -2145,11 +2195,11 @@ dependencies = [
     { name = "typing-extensions" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6a/e7/50731172bf2e6fe1f15e22a081336d144451d5873c044b440a268a772dae/rerun_sdk-0.25.1-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:41eec7d7ea7c048fc475ccd128ff2522dd3aac49daf5c9db50e8ed63ddc05583", size = 88331558, upload-time = "2025-09-19T09:32:22.498Z" },
-    { url = "https://files.pythonhosted.org/packages/42/3e/7811b97a06a3edfc606463a287eb560b3e3cb7bc32ccd861adc7e0d511c7/rerun_sdk-0.25.1-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:4f75960a89949b90f443b814c24647e99ee63d2662f53ee5b97744e25f1d85c0", size = 82275113, upload-time = "2025-09-19T09:32:27.263Z" },
-    { url = "https://files.pythonhosted.org/packages/07/15/3c9c60b28c0e399f980e58df6d7a98e82890623f99b39c731c6437fa86b5/rerun_sdk-0.25.1-cp39-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:2880104561d8719edfe605e636d4bd00ef0f7656fde0af869feb00cf9c1e8d27", size = 90753199, upload-time = "2025-09-19T09:32:31.101Z" },
-    { url = "https://files.pythonhosted.org/packages/52/b3/05c25a8ae701b71b2bb5f61101bdd730ffb8d1027537de5ad97123b99735/rerun_sdk-0.25.1-cp39-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:000c51f8b0faa3ed33800c62ed95249c527152e9615503ce8a81787acefd2361", size = 95201637, upload-time = "2025-09-19T09:32:35.755Z" },
-    { url = "https://files.pythonhosted.org/packages/4e/34/1cd4cee6bace649e68b04c350f8a8ea97de339439cb01832c6d33560532e/rerun_sdk-0.25.1-cp39-abi3-win_amd64.whl", hash = "sha256:f884f5ada4581e4f50448ef641e46c609e747a200a64059de656fb4e4b10cff9", size = 76612241, upload-time = "2025-09-19T09:32:40.97Z" },
+    { url = "https://files.pythonhosted.org/packages/5c/d9/66dc80a335a0d4be1a9394ef94f35dffdad32dd3840be6ed5be42d1978a8/rerun_sdk-0.26.1-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:b7c65402a7d49b21ff6ab2ed23f3b33f7f12bbf22bfb601f0a63443a190773d0", size = 93345083, upload-time = "2025-10-21T15:22:46.673Z" },
+    { url = "https://files.pythonhosted.org/packages/50/b1/4794d4decabcb7df56f5b7f510d771dce7dae2c343b0e43c946b1b7d3b4b/rerun_sdk-0.26.1-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:39684e37f80c7e9c72c15f82d2762f3d4ab2daa4c0b917c9958410a27295bb67", size = 86316183, upload-time = "2025-10-21T15:22:51.33Z" },
+    { url = "https://files.pythonhosted.org/packages/c5/f9/f48066c63f4214578524e1cd74cfffb68fd28da9d28f8bd25b9401810987/rerun_sdk-0.26.1-cp39-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:a678d4d1a07286230d46f6136f7e95cb37daa1b315919807d9db8c9ed075c28a", size = 92669003, upload-time = "2025-10-21T15:22:55.477Z" },
+    { url = "https://files.pythonhosted.org/packages/64/ae/a4ea619511cb221d0222f007be8d243552d5eac02565e1f02d54344345b8/rerun_sdk-0.26.1-cp39-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:5bab964bb314ec026fca32da02eec58a122492a0c1e49b442c2057798a1d5f0b", size = 98762385, upload-time = "2025-10-21T15:23:00.02Z" },
+    { url = "https://files.pythonhosted.org/packages/7b/c3/ad8b8cd82f9dab7841b6b48a993fa0ba20460f05caed6c5d8dc169f2a05f/rerun_sdk-0.26.1-cp39-abi3-win_amd64.whl", hash = "sha256:315d627c53c884e04cb974fa9788a7329f9493e185ee6da6c941b64e19db1191", size = 84253683, upload-time = "2025-10-21T15:23:03.911Z" },
 ]
 
 [[package]]

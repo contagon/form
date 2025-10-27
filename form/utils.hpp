@@ -30,6 +30,7 @@
 #include <tuple>
 
 #include <Eigen/Dense>
+#include <form/inertial/timing.hpp>
 #include <gtsam/geometry/Pose3.h>
 
 namespace form {
@@ -141,7 +142,7 @@ public:
   void reset() { m_start = std::chrono::high_resolution_clock::now(); }
 
   static void print(double duration, std::string name) {
-    std::printf("%s: %f ms\n", name.c_str(), duration);
+    // std::printf("%s: %f ms\n", name.c_str(), duration);
   }
 
   double elapsed(std::optional<std::string> name = std::nullopt) {

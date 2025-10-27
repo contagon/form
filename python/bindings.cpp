@@ -70,7 +70,6 @@ public:
 
   // helper params
   evalio::Duration delta_time_;
-  evalio::SE3 current_pose = evalio::SE3::identity();
 
   // ------------------------- Info ------------------------- //
   static std::string name() { return "form"; }
@@ -92,6 +91,7 @@ public:
     (double, new_pose_threshold,  1e-4, params_.matcher.new_pose_threshold),
     (int,     max_num_rematches,    30, params_.matcher.max_num_rematches),
     (bool,    disable_smoothing, false, params_.constraints.disable_smoothing),
+    (double,       planar_sigma,   0.1, params_.constraints.planar_constraint_sigma),
     // MAPPING
     (int,         max_num_keyscans,   50, params_.scans.max_num_keyscans),
     (int,     max_num_recent_scans,   10, params_.scans.max_num_recent_scans),
@@ -106,9 +106,6 @@ public:
   // clang-format on
 
   // ------------------------- Getters ------------------------- //
-  // Returns the most recent pose estimate
-  const evalio::SE3 pose() override { return current_pose; }
-
   // Returns the current submap of the environment
   const std::map<std::string, std::vector<evalio::Point>> map() override {
     using namespace form;
@@ -215,16 +212,31 @@ public:
     // run the estimator
     std::vector<form::PlanarFeat> planar_kp;
     std::vector<form::PointFeat> point_kp;
+
+    // If we're using the inertial estimator
     if (fuse_imu_) {
       auto value = inertial_estimator_->register_scan(scan, end);
       if (value.has_value()) {
         std::tie(planar_kp, point_kp) = value.value();
-        current_pose = pose_to_evalio(inertial_estimator_->current_estimate());
       };
-    } else {
+      while (!inertial_estimator_->m_estimates.empty()) {
+        const auto est = inertial_estimator_->m_estimates.front();
+        evalio::Stamp ev_stamp{
+            .sec = est.stamp.sec,
+            .nsec = est.stamp.nsec,
+        };
+        this->push_back_estimate(ev_stamp - delta_time_, pose_to_evalio(est.data));
+        inertial_estimator_->m_estimates.pop_front();
+      }
+
+    }
+
+    // Or the lidar-only estimator
+    else {
       std::tie(planar_kp, point_kp) = estimator_->register_scan(scan);
-      current_pose = pose_to_evalio(estimator_->current_lidar_estimate() *
-                                    params_.imu.imu_T_lidar.inverse());
+      const auto pose = pose_to_evalio(estimator_->current_lidar_estimate() *
+                                       params_.imu.imu_T_lidar.inverse());
+      this->push_back_estimate(mm.stamp, pose);
     }
 
     // extract the keypoints

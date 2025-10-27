@@ -80,6 +80,9 @@ struct InertialEstimator {
   using PointCloud = Stamped<std::vector<PointXYZf>>;
   std::deque<PointCloud> m_scan;
 
+  /// @brief Store estimates of scans as they are processed
+  std::deque<Stamped<gtsam::Pose3>> m_estimates;
+
   /// @brief Default constructor with default parameters
   InertialEstimator() : InertialEstimator(Params()) {}
 
