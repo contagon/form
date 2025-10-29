@@ -7,6 +7,7 @@
 
 namespace form {
 // ------------------------- Misc helpers ------------------------- //
+// TODO: Verify this function
 [[nodiscard]] static gtsam::NavState
 integrate(const gtsam::NavState &state, const Eigen::Vector3d &gyro,
           const Eigen::Vector3d &acc, const gtsam::imuBias::ConstantBias &bias,
@@ -154,6 +155,7 @@ ImuHandler::compute_gravity_alignment() noexcept {
   return std::make_pair(world_T_imu, imu_bias);
 }
 
+// TODO: Verify this function (I think it's correct)
 void ImuHandler::update_from(const Stamp &stamp, const gtsam::NavState &nav_state,
                              const gtsam::imuBias::ConstantBias &bias) noexcept {
   std::scoped_lock lock(m_mutex);
@@ -189,6 +191,7 @@ void ImuHandler::update_from(const Stamp &stamp, const gtsam::NavState &nav_stat
   }
 }
 
+// TODO: Verify this function
 gtsam::PreintegratedCombinedMeasurements
 ImuHandler::preintegrate(const Stamp &start, const Stamp &end) const noexcept {
   gtsam::PreintegratedCombinedMeasurements preintegrated(m_params.preintegration,
@@ -222,6 +225,7 @@ ImuHandler::preintegrate(const Stamp &start, const Stamp &end) const noexcept {
   return preintegrated;
 }
 
+// TODO: Verify this function
 const gtsam::NavState ImuHandler::at(const Stamp &stamp) const noexcept {
   auto before = m_buffer.cbegin();
   auto after = before + 1;

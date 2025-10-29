@@ -1,6 +1,6 @@
 pipelines:
   - pipeline: form
-    name: 9_cv_predict
+    name: viz_imu_init
     fuse_imu: true
     point_feats_per_sector: 0
     planar_sigma: 0.01

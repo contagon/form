@@ -68,9 +68,9 @@ public:
     gtsam::LevenbergMarquardtParams opt_params;
 
     Params() {
-      pose_noise = gtsam::noiseModel::Isotropic::Sigma(6, 1e-3);
-      velocity_noise = gtsam::noiseModel::Isotropic::Sigma(3, 1e-3);
-      bias_noise = gtsam::noiseModel::Isotropic::Sigma(6, 1e-2);
+      pose_noise = gtsam::noiseModel::Isotropic::Sigma(6, 1e-4);
+      velocity_noise = gtsam::noiseModel::Isotropic::Sigma(3, 1e-4);
+      bias_noise = gtsam::noiseModel::Isotropic::Sigma(6, 1e-3);
 
       opt_params = gtsam::LevenbergMarquardtParams();
       // We're super dense anyways, don't worry about the ordering

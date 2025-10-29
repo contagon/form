@@ -67,6 +67,7 @@ public:
   std::shared_ptr<form::Estimator> estimator_;
   form::InertialEstimator::Params params_;
   bool fuse_imu_ = false;
+  evalio::SE3 last_integrated_imu_ = evalio::SE3::identity();
 
   // helper params
   evalio::Duration delta_time_;
@@ -192,7 +193,20 @@ public:
   // Add an IMU measurement
   void add_imu(evalio::ImuMeasurement mm) override {
     if (fuse_imu_) {
-      inertial_estimator_->register_imu(imu_to_form(mm));
+      auto result = inertial_estimator_->register_imu(imu_to_form(mm));
+      if (result.has_value()) {
+        last_integrated_imu_ = pose_to_evalio(result.value().data.pose());
+      }
+    }
+  }
+
+  evalio::SE3 get_last_integrated_imu() { return last_integrated_imu_; }
+
+  Eigen::Matrix<double, 6, 1> current_imu_bias() {
+    if (fuse_imu_) {
+      return inertial_estimator_->m_constraints.get_current_bias().vector();
+    } else {
+      return Eigen::Matrix<double, 6, 1>::Zero();
     }
   }
 
@@ -269,7 +283,9 @@ NB_MODULE(_core, m) {
       .def(nb::init<>())
       .def_static("name", &FORM::name)
       .def_static("url", &FORM::url)
-      .def_static("default_params", &FORM::default_params);
+      .def_static("default_params", &FORM::default_params)
+      .def("get_last_integrated_imu", &FORM::get_last_integrated_imu)
+      .def("current_imu_bias", &FORM::current_imu_bias);
 
   // Expose extraction methods too
   nb::class_<form::FeatureExtractor::Params>(m, "KeypointExtractionParams")
