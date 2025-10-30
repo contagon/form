@@ -211,8 +211,7 @@ public:
   }
 
   // Add a LiDAR measurement
-  std::map<std::string, std::vector<evalio::Point>>
-  add_lidar(evalio::LidarMeasurement mm) override {
+  void add_lidar(evalio::LidarMeasurement mm) override {
     // convert to evalio
     std::vector<form::PointXYZf> scan;
     // send a stamp that is at the end of the scan
@@ -239,7 +238,7 @@ public:
             .sec = est.stamp.sec,
             .nsec = est.stamp.nsec,
         };
-        this->push_back_estimate(ev_stamp - delta_time_, pose_to_evalio(est.data));
+        this->save(ev_stamp - delta_time_, pose_to_evalio(est.data));
         inertial_estimator_->m_estimates.pop_front();
       }
 
@@ -250,7 +249,7 @@ public:
       std::tie(planar_kp, point_kp) = estimator_->register_scan(scan);
       const auto pose = pose_to_evalio(estimator_->current_lidar_estimate() *
                                        params_.imu.imu_T_lidar.inverse());
-      this->push_back_estimate(mm.stamp, pose);
+      this->save(mm.stamp, pose);
     }
 
     // extract the keypoints
@@ -268,7 +267,9 @@ public:
       all_point.push_back(ev_point);
     }
 
-    return points;
+    // Save the keypoints
+    // TODO: This is saving things at the wrong time, fix later!
+    this->save(mm.stamp, points);
   }
 };
 

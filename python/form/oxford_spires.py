@@ -15,10 +15,7 @@ from evalio.datasets.loaders import (
 )
 from evalio.types import SE3, SO3, Duration, ImuParams, LidarParams, Stamp, Trajectory
 
-from evalio.datasets import (
-    Dataset,
-    DatasetIterator,
-)
+from evalio.datasets import Dataset, DatasetIterator, get_data_dir
 
 
 class OxfordSpiresCustom(Dataset):
@@ -42,6 +39,10 @@ class OxfordSpiresCustom(Dataset):
     keble_college_04 = auto()
     observatory_quarter_01 = auto()
     observatory_quarter_02 = auto()
+
+    @property
+    def folder(self) -> Path:
+        return get_data_dir() / "oxford_spires" / self.seq_name
 
     # ------------------------- For loading data ------------------------- #
     def data_iter(self) -> DatasetIterator:

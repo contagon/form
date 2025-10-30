@@ -506,7 +506,7 @@ wheels = [
 
 [[package]]
 name = "evalio"
-version = "0.4.0"
+version = "0.4.1"
 source = { directory = "../evalio" }
 dependencies = [
     { name = "asteval" },
@@ -533,7 +533,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rapidfuzz", specifier = ">=3.12.2" },
     { name = "rerun-sdk", marker = "extra == 'vis'", specifier = ">=0.25" },
-    { name = "rosbags", specifier = ">=0.10.10" },
+    { name = "rosbags", specifier = ">=0.11.0" },
     { name = "tqdm", specifier = ">=4.66" },
     { name = "typer", specifier = ">=0.15.3" },
 ]
@@ -542,7 +542,6 @@ provides-extras = ["vis"]
 [package.metadata.requires-dev]
 dev = [
     { name = "basedpyright", specifier = ">=1.31.4" },
-    { name = "bump-my-version", specifier = ">=1.1.1" },
     { name = "cmake", specifier = "<4.0.0" },
     { name = "compdb", specifier = ">=0.2.0" },
     { name = "joblib-stubs", specifier = ">=1.5.2.0.20250831" },
@@ -554,8 +553,8 @@ dev = [
     { name = "nanobind", specifier = ">=2.9.2" },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "ruff", specifier = ">=0.6.8" },
-    { name = "scipy", specifier = ">=1.15.2" },
-    { name = "scipy-stubs", specifier = ">=1.15.2.1" },
+    { name = "scipy", specifier = ">=1.16.2" },
+    { name = "scipy-stubs", specifier = ">=1.16.2.4" },
     { name = "types-pyyaml", specifier = ">=6.0.12.20240917" },
     { name = "types-tabulate", specifier = ">=0.9.0.20240106" },
     { name = "types-tqdm", specifier = ">=4.66.0.20240417" },
