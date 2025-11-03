@@ -28,8 +28,8 @@ dev = ["py-spy>=0.4.1", "snakeviz>=2.2.2"]
 
 [tool.scikit-build.cmake.define]
 FORM_BUILD_PYTHON = true
-# CMAKE_BUILD_TYPE = "Release"
-CMAKE_BUILD_TYPE = "RelWithDebInfo"
+CMAKE_BUILD_TYPE = "Release"
+# CMAKE_BUILD_TYPE = "RelWithDebInfo"
 
 [tool.basedpyright]
 typeCheckingMode = "standard"

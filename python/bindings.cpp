@@ -1,3 +1,4 @@
+#include "evalio/convert/eigen.h"
 #include "evalio/pipeline.h"
 #include "evalio/types.h"
 
@@ -24,6 +25,14 @@
 namespace nb = nanobind;
 
 // ------------------------- Helpers ------------------------- //
+namespace evalio {
+template <> form::PointXYZf convert(const evalio::Point &point) {
+  return form::PointXYZf(point.x, point.y, point.z);
+}
+
+} // namespace evalio
+
+// TODO: Move all these to new convert
 gtsam::Pose3 pose_to_gtsam(const evalio::SE3 &pose) {
   return gtsam::Pose3(gtsam::Rot3(pose.rot.toEigen()), gtsam::Point3(pose.trans));
 }
@@ -93,6 +102,7 @@ public:
     (int,     max_num_rematches,    30, params_.matcher.max_num_rematches),
     (bool,    disable_smoothing, false, params_.constraints.disable_smoothing),
     (double,       planar_sigma,   0.1, params_.constraints.planar_constraint_sigma),
+    (double,        prior_scale,   1.0, params_.constraints.prior_scale),
     // MAPPING
     (int,         max_num_keyscans,   50, params_.scans.max_num_keyscans),
     (int,     max_num_recent_scans,   10, params_.scans.max_num_recent_scans),
@@ -177,6 +187,9 @@ public:
   // ------------------------- Doers ------------------------- //
   // Initialize the pipeline
   void initialize() override {
+    // Make sure prior scale is set
+    params_.constraints.set_scale();
+
     inertial_estimator_ = std::make_shared<form::InertialEstimator>(params_);
 
     // base estimator params are always a subset of inertial params

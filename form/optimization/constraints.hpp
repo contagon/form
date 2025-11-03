@@ -59,6 +59,8 @@ public:
     // Used for ablations, optimize a single pose at a time
     bool disable_smoothing = false;
 
+    double prior_scale = 1.0;
+
     // These are all hardcoded as they shouldn't need to ever be changed
     // Just scaling to make sure priors & feature factors are balanced
     double planar_constraint_sigma = 0.1;
@@ -68,13 +70,17 @@ public:
     gtsam::LevenbergMarquardtParams opt_params;
 
     Params() {
-      pose_noise = gtsam::noiseModel::Isotropic::Sigma(6, 1e-4);
-      velocity_noise = gtsam::noiseModel::Isotropic::Sigma(3, 1e-4);
-      bias_noise = gtsam::noiseModel::Isotropic::Sigma(6, 1e-3);
+      set_scale();
 
       opt_params = gtsam::LevenbergMarquardtParams();
       // We're super dense anyways, don't worry about the ordering
       opt_params.orderingType = gtsam::Ordering::NATURAL;
+    }
+
+    void set_scale() {
+      pose_noise = gtsam::noiseModel::Isotropic::Sigma(6, prior_scale * 1e-3);
+      velocity_noise = gtsam::noiseModel::Isotropic::Sigma(3, prior_scale * 1e-3);
+      bias_noise = gtsam::noiseModel::Isotropic::Sigma(6, prior_scale * 1e-2);
     }
   };
 

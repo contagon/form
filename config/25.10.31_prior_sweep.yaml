@@ -1,0 +1,31 @@
+pipelines:
+  - pipeline: form
+    sweep:
+      prior_scale: [0.05, 0.1, 1.0]
+
+datasets:
+  # ncd20
+  - name: newer_college_2020/short_experiment
+    length: 6000
+  - name: newer_college_2020/long_experiment
+    length: 6000
+  - name: newer_college_2020/parkland_mound
+    length: 6000
+  # ncd21
+  - name: newer_college_2021/*
+    length: 6000
+  # mcd
+  - name: multi_campus/*
+    length: 6000
+  # spires
+  - name: oxford_spires/*
+    length: 6000
+  # hilti
+  - name: hilti_2022/*
+    length: 6000
+  # cumulti
+  # - name: cumulti/*
+  #   length: 6000
+  # botanic garden
+  - name: botanic_garden/*
+    length: 6000
