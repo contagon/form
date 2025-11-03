@@ -219,8 +219,10 @@ ImuHandler::preintegrate(const Stamp &start, const Stamp &end) const noexcept {
 
   // This should integrate the last IMU measurement that is
   // either equal or right after the end
-  preintegrated.integrateMeasurement(imu_iter->acc, imu_iter->gyro,
-                                     (end - (imu_iter - 1)->stamp).to_sec());
+  double dt = (end - (imu_iter - 1)->stamp).to_sec();
+  if (dt >= 1e-8) {
+    preintegrated.integrateMeasurement(imu_iter->acc, imu_iter->gyro, dt);
+  }
 
   return preintegrated;
 }
