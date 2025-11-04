@@ -33,3 +33,4 @@ figures
 graphics
 
 imu_temp
+*.so

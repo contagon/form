@@ -8,22 +8,13 @@ from numpy.typing import NDArray
 
 np.set_printoptions(precision=4, suppress=True)
 
-
-def skew(xi: NDArray[np.float64]) -> NDArray[np.float64]:
-    """Returns the skew symmetric matrix of a 3D vector."""
-    return np.array(
-        [
-            [0, -xi[2], xi[1]],
-            [xi[2], 0, -xi[0]],
-            [-xi[1], xi[0], 0],
-        ]
-    )
+Array = NDArray[np.float64]
 
 
 T = TypeVar("T")
 
 
-def nderiv(f: Callable[[T], NDArray[np.float64]], x: T, eps=1e-6):
+def nderiv(f: Callable[[T], Array], x: T, eps=1e-6):
     # Figure out the adder type
     if isinstance(x, np.ndarray):
         add_eps = lambda v, e: v + e
@@ -57,13 +48,13 @@ X1 = gtsam.Pose3.Expmap(np.random.normal(size=6))
 
 def preintegrate(
     *,
-    gravity: NDArray[np.float64] = np.array([0, 0, -9.81]),
+    gravity: Array = np.array([0, 0, -9.81]),
     x0: gtsam.Pose3 = gtsam.Pose3.Identity(),
     x1: gtsam.Pose3 = X1,
-    v0: NDArray[np.float64] = np.zeros(3),
-    v1: NDArray[np.float64] = np.zeros(3),
-    b: NDArray[np.float64] = np.zeros(6),
-) -> NDArray[np.float64]:
+    v0: Array = np.zeros(3),
+    v1: Array = np.zeros(3),
+    b: Array = np.zeros(6),
+) -> Array:
     params = gtsam.PreintegrationCombinedParams(gravity)
     pim = gtsam.PreintegratedCombinedMeasurements(params)
 
