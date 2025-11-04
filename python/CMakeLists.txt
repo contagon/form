@@ -11,7 +11,7 @@ find_package(
 FetchContent_Declare(
     nanobind
     GIT_REPOSITORY https://github.com/wjakob/nanobind
-    GIT_TAG v2.7.0
+    GIT_TAG v2.9.2
     # FIND_PACKAGE_ARGS CONFIG
 )
 FetchContent_MakeAvailable(nanobind)
@@ -36,6 +36,14 @@ nanobind_add_stub(
     form_stubs
     INSTALL_TIME
     MODULE form._core
-    OUTPUT form/_core.pyi # install directly to final location
+    OUTPUT form/_core/__init__.pyi # install directly to final location
+    PYTHON_PATH "."
+)
+
+nanobind_add_stub(
+    gtsam_stubs
+    INSTALL_TIME
+    MODULE form._core.gtsam
+    OUTPUT form/_core/gtsam.pyi # install directly to final location
     PYTHON_PATH "."
 )

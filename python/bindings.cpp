@@ -11,6 +11,8 @@
 #include "form/inertial/imu.hpp"
 #include "form/utils.hpp"
 
+#include "gtsam_bindings.h"
+
 #include <cstdio>
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/linear/NoiseModel.h>
@@ -376,4 +378,8 @@ NB_MODULE(_core, m) {
 
     return std::make_tuple(planar_points, normals, point_points);
   });
+
+  // gtsam bindings if we want them
+  auto m_gtsam = m.def_submodule("gtsam", "GTSAM bindings");
+  make_gtsam_bindings(m_gtsam);
 }
