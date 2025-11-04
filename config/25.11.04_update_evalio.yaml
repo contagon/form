@@ -1,0 +1,15 @@
+pipelines:
+  - pipeline: form
+    name: lo_new_2
+    # point_feats_per_sector: 0
+
+  - pipeline: form-inertial
+    name: lio_new_4
+    point_feats_per_sector: 0
+    prior_scale: 0.1
+    planar_sigma: 0.01
+
+
+
+datasets:
+  - newer_college_2021/stairs

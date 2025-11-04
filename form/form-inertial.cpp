@@ -27,6 +27,7 @@
 #include <gtsam/navigation/NavState.h>
 #include <iostream>
 #include <optional>
+#include <tuple>
 
 namespace form {
 
@@ -49,7 +50,7 @@ InertialEstimator::register_imu(const Imu &imu) {
   return m_imu.register_imu(imu);
 }
 
-std::tuple<std::vector<PlanarFeat>, std::vector<PointFeat>>
+std::tuple<Stamp, gtsam::Pose3, std::vector<PlanarFeat>, std::vector<PointFeat>>
 InertialEstimator::register_single_scan(const PointCloud &scan) noexcept {
   constexpr auto SEQ = std::make_index_sequence<2>{};
   Timer timer;
@@ -170,23 +171,27 @@ InertialEstimator::register_single_scan(const PointCloud &scan) noexcept {
   timer.elapsed("Marginalization");
 
   // Save pose
-  m_estimates.push_back(
-      Stamped<Pose3>{.stamp = scan.stamp, .data = m_constraints.get_current_pose()});
-
-  return keypoints_lidar;
+  return std::make_tuple(scan.stamp, m_constraints.get_current_pose(),
+                         std::move(std::get<0>(keypoints_lidar)),
+                         std::move(std::get<1>(keypoints_lidar)));
 }
 
-std::optional<std::tuple<std::vector<PlanarFeat>, std::vector<PointFeat>>>
-InertialEstimator::register_scan(const std::vector<PointXYZf> &scan,
-                                 const Stamp &stamp) noexcept {
+void InertialEstimator::register_scan(const std::vector<PointXYZf> &scan,
+                                      const Stamp &stamp) noexcept {
 
   // Check if we should save the scan
   if (m_scan.empty() || m_scan.back().stamp < stamp) {
     m_scan.push_back(PointCloud{.stamp = stamp, .data = scan});
   }
+}
 
-  std::optional<std::tuple<std::vector<PlanarFeat>, std::vector<PointFeat>>> result =
-      std::nullopt;
+std::vector<
+    std::tuple<Stamp, gtsam::Pose3, std::vector<PlanarFeat>, std::vector<PointFeat>>>
+InertialEstimator::process_pending() noexcept {
+
+  std::vector<std::tuple<Stamp, gtsam::Pose3, std::vector<PlanarFeat>,
+                         std::vector<PointFeat>>>
+      result;
   while (
       // Have scans
       !m_scan.empty()
@@ -198,7 +203,7 @@ InertialEstimator::register_scan(const std::vector<PointXYZf> &scan,
       && (m_constraints.initialized() || m_imu.ready_gravity_alignment())
       //
   ) {
-    result = register_single_scan(m_scan.front());
+    result.push_back(register_single_scan(m_scan.front()));
     m_scan.pop_front();
   }
 

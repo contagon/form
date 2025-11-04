@@ -77,6 +77,15 @@ template <> form::Imu convert(const ev::ImuMeasurement &mm) {
   };
 }
 
+// stamps
+template <> form::Stamp convert(const ev::Stamp &stamp) {
+  return form::Stamp{.sec = stamp.sec, .nsec = stamp.nsec};
+}
+
+template <> ev::Stamp convert(const form::Stamp &stamp) {
+  return ev::Stamp{.sec = stamp.sec, .nsec = stamp.nsec};
+}
+
 } // namespace evalio
 
 // ------------------------- Pipelines ------------------------- //
@@ -285,31 +294,18 @@ public:
     // convert to evalio
     auto scan = ev::convert_iter<std::vector<form::PointXYZf>>(mm.points);
     // send a stamp that is at the end of the scan
-    auto end_ev = mm.stamp + delta_time_;
-    auto end = form::Stamp{.sec = end_ev.sec, .nsec = end_ev.nsec};
+    auto end = ev::convert<form::Stamp>(mm.stamp + delta_time_);
 
-    // run the estimator
-    std::vector<form::PlanarFeat> planar_kp;
-    std::vector<form::PointFeat> point_kp;
+    // Add in the scan
+    estimator_->register_scan(scan, end);
 
-    // If we're using the inertial estimator
-    auto value = estimator_->register_scan(scan, end);
-    if (value.has_value()) {
-      std::tie(planar_kp, point_kp) = value.value();
-    };
-    while (!estimator_->m_estimates.empty()) {
-      const auto est = estimator_->m_estimates.front();
-      ev::Stamp ev_stamp{
-          .sec = est.stamp.sec,
-          .nsec = est.stamp.nsec,
-      };
-      this->save(ev_stamp - delta_time_, ev::convert<ev::SE3>(est.data));
-      estimator_->m_estimates.pop_front();
+    // Process any pending scans
+    for (const auto &[stamp, pose, planar_kp, point_kp] :
+         estimator_->process_pending()) {
+      auto ev_stamp = ev::convert<ev::Stamp>(stamp) - delta_time_;
+      this->save(ev_stamp, "planar", planar_kp, "point", point_kp);
+      this->save(ev_stamp, pose);
     }
-
-    // Save the keypoints
-    // TODO: This is saving things at the wrong time, fix later!
-    // this->save(mm.stamp, "planar", planar_kp, "point", point_kp);
   }
 };
 

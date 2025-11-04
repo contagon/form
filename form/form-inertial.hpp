@@ -80,9 +80,6 @@ struct InertialEstimator {
   using PointCloud = Stamped<std::vector<PointXYZf>>;
   std::deque<PointCloud> m_scan;
 
-  /// @brief Store estimates of scans as they are processed
-  std::deque<Stamped<gtsam::Pose3>> m_estimates;
-
   /// @brief Default constructor with default parameters
   InertialEstimator() : InertialEstimator(Params()) {}
 
@@ -96,12 +93,16 @@ struct InertialEstimator {
   std::optional<Stamped<gtsam::NavState>> register_imu(const Imu &imu);
 
   /// @brief Register a new scan and return the extracted features
-  std::tuple<std::vector<PlanarFeat>, std::vector<PointFeat>>
+  std::tuple<Stamp, gtsam::Pose3, std::vector<PlanarFeat>, std::vector<PointFeat>>
   register_single_scan(const PointCloud &scan) noexcept;
 
   /// @brief Register a new scan and return the extracted features
-  std::optional<std::tuple<std::vector<PlanarFeat>, std::vector<PointFeat>>>
-  register_scan(const std::vector<PointXYZf> &scan, const Stamp &stamp) noexcept;
+  void register_scan(const std::vector<PointXYZf> &scan,
+                     const Stamp &stamp) noexcept;
+
+  std::vector<std::tuple<Stamp, gtsam::Pose3, std::vector<PlanarFeat>,
+                         std::vector<PointFeat>>>
+  process_pending() noexcept;
 };
 
 } // namespace form
