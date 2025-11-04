@@ -186,6 +186,9 @@ public:
   /// Used for ablations
   gtsam::NonlinearFactorGraph get_single_graph() noexcept;
 
+  /// @brief Get the current scan index
+  const ScanIndex &get_current_index() const noexcept { return m_scan; }
+
   /// @brief Get a pose for a given scan
   const gtsam::Pose3 get_pose(const ScanIndex &scan) const noexcept;
 
