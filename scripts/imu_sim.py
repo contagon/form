@@ -25,12 +25,35 @@ class State:
 
 
 @dataclass(kw_only=True)
+class Window:
+    dt: float
+    gravity: Array = field(default_factory=lambda: np.array([0, 0, -9.81]))
+    states: list[State] = field(default_factory=list)
+
+    def append(self, state: State):
+        self.states.append(state)
+
+    def preint(
+        self, bias_accel: Array = np.zeros(3), bias_gyro: Array = np.zeros(3)
+    ) -> gtsam.PreintegratedCombinedMeasurements:
+        params = gtsam.PreintegrationCombinedParams(self.gravity)
+
+        bias = gtsam.ConstantBias(bias_accel, bias_gyro)
+        pim = gtsam.PreintegratedCombinedMeasurements(params, bias)
+
+        for s in self.states:
+            pim.integrateMeasurement(s.accel, s.gyro, self.dt)
+
+        return pim
+
+
+@dataclass(kw_only=True)
 class ImuSimulation:
     gravity: Array = field(default_factory=lambda: np.array([0, 0, -9.81]))
     accel_bias: Array = field(default_factory=lambda: np.zeros(3))
     gyro_bias: Array = field(default_factory=lambda: np.zeros(3))
-    accel_noise_sigma: float = 0.1
-    gyro_noise_sigma: float = 0.01
+    accel_noise_sigma: float = 0.0
+    gyro_noise_sigma: float = 0.0
     imu_rate: float = 100.0  # Hz
     accel_gen: Callable[[float], Array] | Array = field(
         default_factory=lambda: np.zeros(3)
@@ -55,26 +78,22 @@ class ImuSimulation:
     def v(self) -> Array:
         return np.array([s.velocity for s in self.state])
 
-    def summarize(
-        self, every: float = 0.5
-    ) -> list[gtsam.PreintegratedCombinedMeasurements]:
+    def summarize(self, every: float = 0.5) -> list[Window]:
         # make sure every is multiple of dt
         dt = 1.0 / self.imu_rate
         step = int(every / dt)
 
-        summaries = []
-        params = gtsam.PreintegrationCombinedParams(self.gravity)
-        pim = gtsam.PreintegratedCombinedMeasurements(params)
+        windows: list[Window] = []
 
+        # This organizes the windows to integrate from start of current measurement to start of next
+        # The last one should consist of a single state at the end time
         for i, s in enumerate(self.state):
-            if i % step == 0 and i != 0:
-                print(pim.deltaTij())
-                summaries.append(pim)
-                pim = gtsam.PreintegratedCombinedMeasurements(params)
+            if i % step == 0:
+                windows.append(Window(dt=dt, gravity=self.gravity))
 
-            pim.integrateMeasurement(s.accel, s.gyro, dt)
+            windows[-1].append(s)
 
-        return summaries
+        return windows
 
     def __post_init__(self):
         self.state = [
@@ -99,7 +118,7 @@ class ImuSimulation:
         dt = 1.0 / self.imu_rate
         num_steps = int(self.total_time * self.imu_rate)
 
-        for i in range(1, num_steps):
+        for i in range(1, num_steps + 1):
             prev = self.state[-1]
 
             R_prev = prev.rotation

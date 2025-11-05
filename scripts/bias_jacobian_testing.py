@@ -98,7 +98,7 @@ def preintegrate(
     return err
 
 
-preintegrate()
+# preintegrate()
 
 # print("Gravity Jacobian:")
 # fx, jac = nderiv(lambda g: preintegrate(gravity=g), np.array([0, 0, -9.81]))

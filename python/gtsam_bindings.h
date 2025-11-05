@@ -3,39 +3,49 @@ To avoid mismatched versions of GTSAM and its Python bindings, to add
 some custom bindings for some things we were experimenting with, and to switch
 bindings to nanobind, we bind a small subset of gtsam that we need here.
 
-These are largely slightly modified from the official gtsam pybind11 bindings
-that are automatically generated when building gtsam python bindings.
+These are largely slightly modified from the official gtsam nbbind11 bindings
+that are automatically generated when building gtsam nbthon bindings.
 */
 
 #include <cstdio>
 #include <gtsam/base/utilities.h>
 #include <gtsam/geometry/Pose3.h>
+#include <gtsam/inference/Key.h>
 #include <gtsam/inference/Symbol.h>
 #include <gtsam/linear/NoiseModel.h>
 #include <gtsam/navigation/CombinedImuFactor.h>
 #include <gtsam/navigation/ImuBias.h>
 #include <gtsam/navigation/NavState.h>
+#include <gtsam/nonlinear/CustomFactor.h>
+#include <gtsam/nonlinear/LevenbergMarquardtOptimizer.h>
+#include <gtsam/nonlinear/NonlinearFactorGraph.h>
+#include <gtsam/nonlinear/NonlinearOptimizer.h>
+#include <gtsam/nonlinear/NonlinearOptimizerParams.h>
 #include <gtsam/nonlinear/Values.h>
 
-#include <memory>
 #include <nanobind/eigen/dense.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/operators.h>
+#include <nanobind/stl/bind_vector.h>
+#include <nanobind/stl/function.h>
 #include <nanobind/stl/map.h>
 #include <nanobind/stl/pair.h>
+#include <nanobind/stl/shared_ptr.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/tuple.h>
 #include <nanobind/stl/variant.h>
 #include <nanobind/stl/vector.h>
 
-#include <utility>
+#include "boost_shared_ptr.h"
 
 namespace nb = nanobind;
-namespace gt = gtsam;
 using std::string;
+
+NB_MAKE_OPAQUE(gtsam::JacobianVector);
 
 // clang-format off
 inline void make_gtsam_bindings(nb::module_ &m_) {
+  // ------------------------- Variables ------------------------- //
   nb::class_<gtsam::Rot3>(m_, "Rot3")
         .def(nb::init<>())
         .def(nb::init<const gtsam::Matrix&>(), nb::arg("R"))
@@ -86,7 +96,9 @@ inline void make_gtsam_bindings(nb::module_ &m_) {
         .def_static("ClosestTo",[](const gtsam::Matrix& M){return gtsam::Rot3::ClosestTo(M);}, nb::arg("M"))
         .def_static("Identity",[](){return gtsam::Rot3::Identity();})
         .def_static("Expmap",[](const gtsam::Vector& v){return gtsam::Rot3::Expmap(v);}, nb::arg("v"))
+        .def_static("ExpmapDerivative", [](const gtsam::Vector& v){return gtsam::Rot3::ExpmapDerivative(v);}, nb::arg("v"))
         .def_static("Logmap",[](const gtsam::Rot3& p){return gtsam::Rot3::Logmap(p);}, nb::arg("p"))
+        .def_static("LogmapDerivative", [](const gtsam::Vector& p){return gtsam::Rot3::LogmapDerivative(p);}, nb::arg("p"))
         .def(nb::self * nb::self);
 
 
@@ -200,6 +212,8 @@ inline void make_gtsam_bindings(nb::module_ &m_) {
         .def("correctPIM", [](gtsam::NavState* self, const gtsam::Vector9& pimCorrection, double dt, const gtsam::Vector3& gravity){return self->correctPIM(pimCorrection, dt, gravity, boost::none);})
         .def("localCoordinates",[](gtsam::NavState* self, const gtsam::NavState& g){return self->localCoordinates(g);}, nb::arg("g"));
 
+    
+    // ------------------------- Containers ------------------------- //
     nb::class_<gtsam::Values>(m_, "Values")
         .def(nb::init<>())
         .def(nb::init<const gtsam::Values&>(), nb::arg("other"))
@@ -314,8 +328,227 @@ inline void make_gtsam_bindings(nb::module_ &m_) {
     m_.def("X",[](size_t j){return gtsam::symbol_shorthand::X(j);}, nb::arg("j"));
     m_.def("Y",[](size_t j){return gtsam::symbol_shorthand::Y(j);}, nb::arg("j"));
     m_.def("Z",[](size_t j){return gtsam::symbol_shorthand::Z(j);}, nb::arg("j"));
+    
+    nb::class_<gtsam::NonlinearFactorGraph>(m_, "NonlinearFactorGraph")
+        .def(nb::init<>())
+        .def(nb::init<const gtsam::NonlinearFactorGraph&>(), nb::arg("graph"))
+        .def("print",[](gtsam::NonlinearFactorGraph* self, string s){ self->print(s, gtsam::DefaultKeyFormatter);}, nb::arg("s") = "NonlinearFactorGraph: ")
+        .def("__repr__",
+                    [](const gtsam::NonlinearFactorGraph& self, string s){
+                        gtsam::RedirectCout redirect;
+                        self.print(s, gtsam::DefaultKeyFormatter);
+                        return redirect.str();
+                    }, nb::arg("s") = "NonlinearFactorGraph: ")
+        .def("equals",[](gtsam::NonlinearFactorGraph* self, const gtsam::NonlinearFactorGraph& fg, double tol){return self->equals(fg, tol);}, nb::arg("fg"), nb::arg("tol"))
+        .def("size",[](gtsam::NonlinearFactorGraph* self){return self->size();})
+        .def("empty",[](gtsam::NonlinearFactorGraph* self){return self->empty();})
+        .def("remove",[](gtsam::NonlinearFactorGraph* self, size_t i){ self->remove(i);}, nb::arg("i"))
+        .def("replace",[](gtsam::NonlinearFactorGraph* self, size_t i, boost::shared_ptr<gtsam::NonlinearFactor> factors){ self->replace(i, factors);}, nb::arg("i"), nb::arg("factors"))
+        .def("resize",[](gtsam::NonlinearFactorGraph* self, size_t size){ self->resize(size);}, nb::arg("size"))
+        .def("nrFactors",[](gtsam::NonlinearFactorGraph* self){return self->nrFactors();})
+        .def("at",[](gtsam::NonlinearFactorGraph* self, size_t idx){return self->at(idx);}, nb::arg("idx"))
+        .def("push_back",[](gtsam::NonlinearFactorGraph* self, const gtsam::NonlinearFactorGraph& factors){ self->push_back(factors);}, nb::arg("factors"))
+        .def("push_back",[](gtsam::NonlinearFactorGraph* self, boost::shared_ptr<gtsam::NonlinearFactor> factor){ self->push_back(factor);}, nb::arg("factor"))
+        .def("add",[](gtsam::NonlinearFactorGraph* self, boost::shared_ptr<gtsam::NonlinearFactor> factor){ self->add(factor);}, nb::arg("factor"))
+        .def("exists",[](gtsam::NonlinearFactorGraph* self, size_t idx){return self->exists(idx);}, nb::arg("idx"))
+        .def("keys",[](gtsam::NonlinearFactorGraph* self){return self->keys();})
+        .def("keyVector",[](gtsam::NonlinearFactorGraph* self){return self->keyVector();})
+        .def("addPriorDouble",[](gtsam::NonlinearFactorGraph* self, size_t key, const double& prior, const boost::shared_ptr<gtsam::noiseModel::Base> noiseModel){ self->addPrior<double>(key, prior, noiseModel);}, nb::arg("key"), nb::arg("prior"), nb::arg("noiseModel"))
+        .def("addPriorVector",[](gtsam::NonlinearFactorGraph* self, size_t key, const gtsam::Vector& prior, const boost::shared_ptr<gtsam::noiseModel::Base> noiseModel){ self->addPrior<gtsam::Vector>(key, prior, noiseModel);}, nb::arg("key"), nb::arg("prior"), nb::arg("noiseModel"))
+        .def("addPriorPoint2",[](gtsam::NonlinearFactorGraph* self, size_t key, const gtsam::Point2& prior, const boost::shared_ptr<gtsam::noiseModel::Base> noiseModel){ self->addPrior<gtsam::Point2>(key, prior, noiseModel);}, nb::arg("key"), nb::arg("prior"), nb::arg("noiseModel"))
+        .def("addPriorPoint3",[](gtsam::NonlinearFactorGraph* self, size_t key, const gtsam::Point3& prior, const boost::shared_ptr<gtsam::noiseModel::Base> noiseModel){ self->addPrior<gtsam::Point3>(key, prior, noiseModel);}, nb::arg("key"), nb::arg("prior"), nb::arg("noiseModel"))
+        .def("addPriorRot3",[](gtsam::NonlinearFactorGraph* self, size_t key, const gtsam::Rot3& prior, const boost::shared_ptr<gtsam::noiseModel::Base> noiseModel){ self->addPrior<gtsam::Rot3>(key, prior, noiseModel);}, nb::arg("key"), nb::arg("prior"), nb::arg("noiseModel"))
+        .def("addPriorPose3",[](gtsam::NonlinearFactorGraph* self, size_t key, const gtsam::Pose3& prior, const boost::shared_ptr<gtsam::noiseModel::Base> noiseModel){ self->addPrior<gtsam::Pose3>(key, prior, noiseModel);}, nb::arg("key"), nb::arg("prior"), nb::arg("noiseModel"))
+        .def("addPriorConstantBias",[](gtsam::NonlinearFactorGraph* self, size_t key, const gtsam::imuBias::ConstantBias& prior, const boost::shared_ptr<gtsam::noiseModel::Base> noiseModel){ self->addPrior<gtsam::imuBias::ConstantBias>(key, prior, noiseModel);}, nb::arg("key"), nb::arg("prior"), nb::arg("noiseModel"))
+        .def("printErrors",[](gtsam::NonlinearFactorGraph* self, const gtsam::Values& values){ self->printErrors(values);}, nb::arg("values"))
+        .def("error",[](gtsam::NonlinearFactorGraph* self, const gtsam::Values& values){return self->error(values);}, nb::arg("values"))
+        .def("probPrime",[](gtsam::NonlinearFactorGraph* self, const gtsam::Values& values){return self->probPrime(values);}, nb::arg("values"))
+        .def("linearize",[](gtsam::NonlinearFactorGraph* self, const gtsam::Values& values){return self->linearize(values);}, nb::arg("values"))
+        .def("clone",[](gtsam::NonlinearFactorGraph* self){return self->clone();})
+        .def("dot",[](gtsam::NonlinearFactorGraph* self, const gtsam::Values& values){return self->dot(values, gtsam::DefaultKeyFormatter, gtsam::GraphvizFormatting());}, nb::arg("values"))
+        .def("saveGraph",[](gtsam::NonlinearFactorGraph* self, const string& s, const gtsam::Values& values){ self->saveGraph(s, values, gtsam::DefaultKeyFormatter, gtsam::GraphvizFormatting());}, nb::arg("s"), nb::arg("values"));
+    ;
+
+    // ------------------------- Factors ------------------------- //
+    nb::class_<gtsam::Factor>(m_, "Factor")
+        .def("print",[](gtsam::Factor* self, string s){ self->print(s, gtsam::DefaultKeyFormatter);}, nb::arg("s") = "Factor\n")
+        .def("__repr__",
+                    [](const gtsam::Factor& self, string s){
+                        gtsam::RedirectCout redirect;
+                        self.print(s, gtsam::DefaultKeyFormatter);
+                        return redirect.str();
+                    }, nb::arg("s") = "Factor\n")
+        .def("printKeys",[](gtsam::Factor* self, string s){ self->printKeys(s);}, nb::arg("s") = "")
+        .def("equals",[](gtsam::Factor* self, const gtsam::Factor& other, double tol){return self->equals(other, tol);}, nb::arg("other"), nb::arg("tol") = 1e-9)
+        .def("empty",[](gtsam::Factor* self){return self->empty();})
+        .def("size",[](gtsam::Factor* self){return self->size();})
+        .def("keys",[](gtsam::Factor* self){return self->keys();});
+
+    nb::class_<gtsam::NonlinearFactor, gtsam::Factor>(m_, "NonlinearFactor")
+        .def("print",[](gtsam::NonlinearFactor* self, string s){ self->print(s, gtsam::DefaultKeyFormatter);}, nb::arg("s") = "")
+        .def("__repr__",
+                    [](const gtsam::NonlinearFactor& self, string s){
+                        gtsam::RedirectCout redirect;
+                        self.print(s, gtsam::DefaultKeyFormatter);
+                        return redirect.str();
+                    }, nb::arg("s") = "")
+        .def("equals",[](gtsam::NonlinearFactor* self, const gtsam::NonlinearFactor& other, double tol){return self->equals(other, tol);}, nb::arg("other"), nb::arg("tol"))
+        .def("error",[](gtsam::NonlinearFactor* self, const gtsam::Values& c){return self->error(c);}, nb::arg("c"))
+        .def("dim",[](gtsam::NonlinearFactor* self){return self->dim();})
+        .def("active",[](gtsam::NonlinearFactor* self, const gtsam::Values& c){return self->active(c);}, nb::arg("c"))
+        .def("linearize",[](gtsam::NonlinearFactor* self, const gtsam::Values& c){return self->linearize(c);}, nb::arg("c"))
+        .def("clone",[](gtsam::NonlinearFactor* self){return self->clone();})
+        .def("rekey",[](gtsam::NonlinearFactor* self, const gtsam::KeyVector& newKeys){return self->rekey(newKeys);}, nb::arg("newKeys"));
+
+    nb::class_<gtsam::NoiseModelFactor, gtsam::NonlinearFactor>(m_, "NoiseModelFactor")
+        .def("equals",[](gtsam::NoiseModelFactor* self, const gtsam::NoiseModelFactor& other, double tol){return self->equals(other, tol);}, nb::arg("other"), nb::arg("tol"))
+        .def("noiseModel",[](gtsam::NoiseModelFactor* self){return self->noiseModel();})
+        .def("unwhitenedError",[](gtsam::NoiseModelFactor* self, const gtsam::Values& x){return self->unwhitenedError(x);}, nb::arg("x"))
+        .def("whitenedError",[](gtsam::NoiseModelFactor* self, const gtsam::Values& x){return self->whitenedError(x);}, nb::arg("x"));
+
+    // Need to bind this so it isn't copied when being type-casted
+    nb::bind_vector<gtsam::JacobianVector>(m_, "JacobianVector");
+
+    nb::class_<gtsam::CustomFactor, gtsam::NoiseModelFactor>(m_, "CustomFactor")
+        .def(nb::init<>())
+        .def(nb::init<const gtsam::SharedNoiseModel&, const gtsam::KeyVector&, const gtsam::CustomErrorFunction&>(), nb::arg("noiseModel"), nb::arg("keys"), nb::arg("errorFunction"))
+        .def("print",[](gtsam::CustomFactor* self, string s){ self->print(s, gtsam::DefaultKeyFormatter);}, nb::arg("s") = "")
+        .def("__repr__",
+                    [](const gtsam::CustomFactor& self, string s){
+                        gtsam::RedirectCout redirect;
+                        self.print(s, gtsam::DefaultKeyFormatter);
+                        return redirect.str();
+                    }, nb::arg("s") = "");
+
+    // ------------------------- Noise Models ------------------------- //
+    nb::class_<gtsam::noiseModel::Base>(m_, "Base")
+        .def("print",[](gtsam::noiseModel::Base* self, string s){ self->print(s);}, nb::arg("s") = "")
+        .def("__repr__",
+                    [](const gtsam::noiseModel::Base& self, string s){
+                        gtsam::RedirectCout redirect;
+                        self.print(s);
+                        return redirect.str();
+                    }, nb::arg("s") = "");
+
+    nb::class_<gtsam::noiseModel::Gaussian, gtsam::noiseModel::Base>(m_, "Gaussian")
+        .def("equals",[](gtsam::noiseModel::Gaussian* self, gtsam::noiseModel::Base& expected, double tol){return self->equals(expected, tol);}, nb::arg("expected"), nb::arg("tol"))
+        .def("R",[](gtsam::noiseModel::Gaussian* self){return self->R();})
+        .def("information",[](gtsam::noiseModel::Gaussian* self){return self->information();})
+        .def("covariance",[](gtsam::noiseModel::Gaussian* self){return self->covariance();})
+        .def("whiten",[](gtsam::noiseModel::Gaussian* self, const gtsam::Vector& v){return self->whiten(v);}, nb::arg("v"))
+        .def("unwhiten",[](gtsam::noiseModel::Gaussian* self, const gtsam::Vector& v){return self->unwhiten(v);}, nb::arg("v"))
+        .def("Whiten",[](gtsam::noiseModel::Gaussian* self, const gtsam::Matrix& H){return self->Whiten(H);}, nb::arg("H"))
+        .def_static("Information",[](const gtsam::Matrix& R, bool smart){return gtsam::noiseModel::Gaussian::Information(R, smart);}, nb::arg("R"), nb::arg("smart") = true)
+        .def_static("SqrtInformation",[](const gtsam::Matrix& R, bool smart){return gtsam::noiseModel::Gaussian::SqrtInformation(R, smart);}, nb::arg("R"), nb::arg("smart") = true)
+        .def_static("Covariance",[](const gtsam::Matrix& R, bool smart){return gtsam::noiseModel::Gaussian::Covariance(R, smart);}, nb::arg("R"), nb::arg("smart") = true);
+
+    nb::class_<gtsam::noiseModel::Diagonal, gtsam::noiseModel::Gaussian>(m_, "Diagonal")
+        .def("R",[](gtsam::noiseModel::Diagonal* self){return self->R();})
+        .def("sigmas",[](gtsam::noiseModel::Diagonal* self){return self->sigmas();})
+        .def("invsigmas",[](gtsam::noiseModel::Diagonal* self){return self->invsigmas();})
+        .def("precisions",[](gtsam::noiseModel::Diagonal* self){return self->precisions();})
+        .def_static("Sigmas",[](const gtsam::Vector& sigmas, bool smart){return gtsam::noiseModel::Diagonal::Sigmas(sigmas, smart);}, nb::arg("sigmas"), nb::arg("smart") = true)
+        .def_static("Variances",[](const gtsam::Vector& variances, bool smart){return gtsam::noiseModel::Diagonal::Variances(variances, smart);}, nb::arg("variances"), nb::arg("smart") = true)
+        .def_static("Precisions",[](const gtsam::Vector& precisions, bool smart){return gtsam::noiseModel::Diagonal::Precisions(precisions, smart);}, nb::arg("precisions"), nb::arg("smart") = true);
+
+    nb::class_<gtsam::noiseModel::Constrained, gtsam::noiseModel::Diagonal>(m_, "Constrained")
+        .def("unit",[](gtsam::noiseModel::Constrained* self){return self->unit();})
+        .def_static("MixedSigmas",[](const gtsam::Vector& mu, const gtsam::Vector& sigmas){return gtsam::noiseModel::Constrained::MixedSigmas(mu, sigmas);}, nb::arg("mu"), nb::arg("sigmas"))
+        .def_static("MixedSigmas",[](double m, const gtsam::Vector& sigmas){return gtsam::noiseModel::Constrained::MixedSigmas(m, sigmas);}, nb::arg("m"), nb::arg("sigmas"))
+        .def_static("MixedVariances",[](const gtsam::Vector& mu, const gtsam::Vector& variances){return gtsam::noiseModel::Constrained::MixedVariances(mu, variances);}, nb::arg("mu"), nb::arg("variances"))
+        .def_static("MixedVariances",[](const gtsam::Vector& variances){return gtsam::noiseModel::Constrained::MixedVariances(variances);}, nb::arg("variances"))
+        .def_static("MixedPrecisions",[](const gtsam::Vector& mu, const gtsam::Vector& precisions){return gtsam::noiseModel::Constrained::MixedPrecisions(mu, precisions);}, nb::arg("mu"), nb::arg("precisions"))
+        .def_static("MixedPrecisions",[](const gtsam::Vector& precisions){return gtsam::noiseModel::Constrained::MixedPrecisions(precisions);}, nb::arg("precisions"))
+        .def_static("All",[](size_t dim){return gtsam::noiseModel::Constrained::All(dim);}, nb::arg("dim"))
+        .def_static("All",[](size_t dim, double mu){return gtsam::noiseModel::Constrained::All(dim, mu);}, nb::arg("dim"), nb::arg("mu"));
+
+    nb::class_<gtsam::noiseModel::Isotropic, gtsam::noiseModel::Diagonal>(m_, "Isotropic")
+        .def("sigma",[](gtsam::noiseModel::Isotropic* self){return self->sigma();})
+        .def_static("Sigma",[](size_t dim, double sigma, bool smart){return gtsam::noiseModel::Isotropic::Sigma(dim, sigma, smart);}, nb::arg("dim"), nb::arg("sigma"), nb::arg("smart") = true)
+        .def_static("Variance",[](size_t dim, double varianace, bool smart){return gtsam::noiseModel::Isotropic::Variance(dim, varianace, smart);}, nb::arg("dim"), nb::arg("varianace"), nb::arg("smart") = true)
+        .def_static("Precision",[](size_t dim, double precision, bool smart){return gtsam::noiseModel::Isotropic::Precision(dim, precision, smart);}, nb::arg("dim"), nb::arg("precision"), nb::arg("smart") = true);
+
+    nb::class_<gtsam::noiseModel::Unit, gtsam::noiseModel::Isotropic>(m_, "Unit")
+        .def_static("Create",[](size_t dim){return gtsam::noiseModel::Unit::Create(dim);}, nb::arg("dim"));
 
 
+    // ------------------------- Optimizers ------------------------- //
+    nb::class_<gtsam::NonlinearOptimizerParams>(m_, "NonlinearOptimizerParams")
+        .def(nb::init<>())
+        .def("print",[](gtsam::NonlinearOptimizerParams* self, string s){ self->print(s);}, nb::arg("s") = "")
+        .def("__repr__",
+                    [](const gtsam::NonlinearOptimizerParams& self, string s){
+                        gtsam::RedirectCout redirect;
+                        self.print(s);
+                        return redirect.str();
+                    }, nb::arg("s") = "")
+        .def("getMaxIterations",[](gtsam::NonlinearOptimizerParams* self){return self->getMaxIterations();})
+        .def("getRelativeErrorTol",[](gtsam::NonlinearOptimizerParams* self){return self->getRelativeErrorTol();})
+        .def("getAbsoluteErrorTol",[](gtsam::NonlinearOptimizerParams* self){return self->getAbsoluteErrorTol();})
+        .def("getErrorTol",[](gtsam::NonlinearOptimizerParams* self){return self->getErrorTol();})
+        .def("getVerbosity",[](gtsam::NonlinearOptimizerParams* self){return self->getVerbosity();})
+        .def("setMaxIterations",[](gtsam::NonlinearOptimizerParams* self, int value){ self->setMaxIterations(value);}, nb::arg("value"))
+        .def("setRelativeErrorTol",[](gtsam::NonlinearOptimizerParams* self, double value){ self->setRelativeErrorTol(value);}, nb::arg("value"))
+        .def("setAbsoluteErrorTol",[](gtsam::NonlinearOptimizerParams* self, double value){ self->setAbsoluteErrorTol(value);}, nb::arg("value"))
+        .def("setErrorTol",[](gtsam::NonlinearOptimizerParams* self, double value){ self->setErrorTol(value);}, nb::arg("value"))
+        .def("setVerbosity",[](gtsam::NonlinearOptimizerParams* self, string s){ self->setVerbosity(s);}, nb::arg("s"))
+        .def("getLinearSolverType",[](gtsam::NonlinearOptimizerParams* self){return self->getLinearSolverType();})
+        .def("setLinearSolverType",[](gtsam::NonlinearOptimizerParams* self, string solver){ self->setLinearSolverType(solver);}, nb::arg("solver"))
+        .def("setIterativeParams",[](gtsam::NonlinearOptimizerParams* self, boost::shared_ptr<gtsam::IterativeOptimizationParameters> params){ self->setIterativeParams(params);}, nb::arg("params"))
+        .def("setOrdering",[](gtsam::NonlinearOptimizerParams* self, const gtsam::Ordering& ordering){ self->setOrdering(ordering);}, nb::arg("ordering"))
+        .def("getOrderingType",[](gtsam::NonlinearOptimizerParams* self){return self->getOrderingType();})
+        .def("setOrderingType",[](gtsam::NonlinearOptimizerParams* self, string ordering){ self->setOrderingType(ordering);}, nb::arg("ordering"))
+        .def("isMultifrontal",[](gtsam::NonlinearOptimizerParams* self){return self->isMultifrontal();})
+        .def("isSequential",[](gtsam::NonlinearOptimizerParams* self){return self->isSequential();})
+        .def("isCholmod",[](gtsam::NonlinearOptimizerParams* self){return self->isCholmod();})
+        .def("isIterative",[](gtsam::NonlinearOptimizerParams* self){return self->isIterative();})
+        .def_rw("iterationHook", &gtsam::NonlinearOptimizerParams::iterationHook);
+
+    nb::class_<gtsam::LevenbergMarquardtParams, gtsam::NonlinearOptimizerParams>(m_, "LevenbergMarquardtParams")
+        .def(nb::init<>())
+        .def("getDiagonalDamping",[](gtsam::LevenbergMarquardtParams* self){return self->getDiagonalDamping();})
+        .def("getlambdaFactor",[](gtsam::LevenbergMarquardtParams* self){return self->getlambdaFactor();})
+        .def("getlambdaInitial",[](gtsam::LevenbergMarquardtParams* self){return self->getlambdaInitial();})
+        .def("getlambdaLowerBound",[](gtsam::LevenbergMarquardtParams* self){return self->getlambdaLowerBound();})
+        .def("getlambdaUpperBound",[](gtsam::LevenbergMarquardtParams* self){return self->getlambdaUpperBound();})
+        .def("getUseFixedLambdaFactor",[](gtsam::LevenbergMarquardtParams* self){return self->getUseFixedLambdaFactor();})
+        .def("getLogFile",[](gtsam::LevenbergMarquardtParams* self){return self->getLogFile();})
+        .def("getVerbosityLM",[](gtsam::LevenbergMarquardtParams* self){return self->getVerbosityLM();})
+        .def("setDiagonalDamping",[](gtsam::LevenbergMarquardtParams* self, bool flag){ self->setDiagonalDamping(flag);}, nb::arg("flag"))
+        .def("setlambdaFactor",[](gtsam::LevenbergMarquardtParams* self, double value){ self->setlambdaFactor(value);}, nb::arg("value"))
+        .def("setlambdaInitial",[](gtsam::LevenbergMarquardtParams* self, double value){ self->setlambdaInitial(value);}, nb::arg("value"))
+        .def("setlambdaLowerBound",[](gtsam::LevenbergMarquardtParams* self, double value){ self->setlambdaLowerBound(value);}, nb::arg("value"))
+        .def("setlambdaUpperBound",[](gtsam::LevenbergMarquardtParams* self, double value){ self->setlambdaUpperBound(value);}, nb::arg("value"))
+        .def("setUseFixedLambdaFactor",[](gtsam::LevenbergMarquardtParams* self, bool flag){ self->setUseFixedLambdaFactor(flag);}, nb::arg("flag"))
+        .def("setLogFile",[](gtsam::LevenbergMarquardtParams* self, string s){ self->setLogFile(s);}, nb::arg("s"))
+        .def("setVerbosityLM",[](gtsam::LevenbergMarquardtParams* self, string s){ self->setVerbosityLM(s);}, nb::arg("s"))
+        .def_static("LegacyDefaults",[](){return gtsam::LevenbergMarquardtParams::LegacyDefaults();})
+        .def_static("CeresDefaults",[](){return gtsam::LevenbergMarquardtParams::CeresDefaults();})
+        .def_static("EnsureHasOrdering",[](gtsam::LevenbergMarquardtParams params, const gtsam::NonlinearFactorGraph& graph){return gtsam::LevenbergMarquardtParams::EnsureHasOrdering(params, graph);}, nb::arg("params"), nb::arg("graph"))
+        .def_static("ReplaceOrdering",[](gtsam::LevenbergMarquardtParams params, const gtsam::Ordering& ordering){return gtsam::LevenbergMarquardtParams::ReplaceOrdering(params, ordering);}, nb::arg("params"), nb::arg("ordering"));
+
+    nb::class_<gtsam::NonlinearOptimizer>(m_, "NonlinearOptimizer")
+        .def("optimize",[](gtsam::NonlinearOptimizer* self){return self->optimize();})
+        .def("optimizeSafely",[](gtsam::NonlinearOptimizer* self){return self->optimizeSafely();})
+        .def("error",[](gtsam::NonlinearOptimizer* self){return self->error();})
+        .def("iterations",[](gtsam::NonlinearOptimizer* self){return self->iterations();})
+        .def("values",[](gtsam::NonlinearOptimizer* self){return self->values();})
+        .def("graph",[](gtsam::NonlinearOptimizer* self){return self->graph();})
+        .def("iterate",[](gtsam::NonlinearOptimizer* self){return self->iterate();});
+
+    nb::class_<gtsam::LevenbergMarquardtOptimizer, gtsam::NonlinearOptimizer>(m_, "LevenbergMarquardtOptimizer")
+        .def(nb::init<const gtsam::NonlinearFactorGraph&, const gtsam::Values&>(), nb::arg("graph"), nb::arg("initialValues"))
+        .def(nb::init<const gtsam::NonlinearFactorGraph&, const gtsam::Values&, const gtsam::LevenbergMarquardtParams&>(), nb::arg("graph"), nb::arg("initialValues"), nb::arg("params"))
+        .def("lambda_",[](gtsam::LevenbergMarquardtOptimizer* self){return self->lambda();})
+        .def("print",[](gtsam::LevenbergMarquardtOptimizer* self, string s){ self->print(s);}, nb::arg("s") = "")
+        .def("__repr__",
+                    [](const gtsam::LevenbergMarquardtOptimizer& self, string s){
+                        gtsam::RedirectCout redirect;
+                        self.print(s);
+                        return redirect.str();
+                    }, nb::arg("s") = "");
+
+    // ------------------------- IMU ------------------------- //
     nb::class_<gtsam::PreintegratedRotationParams>(m_, "PreintegratedRotationParams")
         .def(nb::init<>())
         .def("print",[](gtsam::PreintegratedRotationParams* self, string s){ self->print(s);}, nb::arg("s") = "")
@@ -413,8 +646,7 @@ inline void make_gtsam_bindings(nb::module_ &m_) {
         .def("preintegrated_H_biasOmega", [](gtsam::PreintegratedCombinedMeasurements* self) { return self->preintegrated_H_biasOmega(); })
         .def("predict",[](gtsam::PreintegratedCombinedMeasurements* self, const gtsam::NavState& state_i, const gtsam::imuBias::ConstantBias& bias){return self->predict(state_i, bias);}, nb::arg("state_i"), nb::arg("bias"));
 
-    // TODO: add gtsam::NonlinearFactor wrapper here
-    nb::class_<gtsam::CombinedImuFactor>(m_, "CombinedImuFactor")
+    nb::class_<gtsam::CombinedImuFactor, gtsam::NonlinearFactor>(m_, "CombinedImuFactor")
         .def(nb::init<size_t, size_t, size_t, size_t, size_t, size_t, const gtsam::PreintegratedCombinedMeasurements&>(), nb::arg("pose_i"), nb::arg("vel_i"), nb::arg("pose_j"), nb::arg("vel_j"), nb::arg("bias_i"), nb::arg("bias_j"), nb::arg("CombinedPreintegratedMeasurements"))
         .def("preintegratedMeasurements",[](gtsam::CombinedImuFactor* self){return self->preintegratedMeasurements();})
         .def("evaluateError",[](gtsam::CombinedImuFactor* self, const gtsam::Pose3& pose_i, const gtsam::Vector& vel_i, const gtsam::Pose3& pose_j, const gtsam::Vector& vel_j, const gtsam::imuBias::ConstantBias& bias_i, const gtsam::imuBias::ConstantBias& bias_j){return self->evaluateError(pose_i, vel_i, pose_j, vel_j, bias_i, bias_j);}, nb::arg("pose_i"), nb::arg("vel_i"), nb::arg("pose_j"), nb::arg("vel_j"), nb::arg("bias_i"), nb::arg("bias_j"));
