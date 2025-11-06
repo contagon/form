@@ -13,19 +13,23 @@ class EstimationMethod(Protocol):
     @property
     def __name__(self) -> str: ...
 
-    def __call__(self, sim: ImuSimulation, *args, **kwargs) -> tuple[Array, Array]: ...
+    def __call__(
+        self, sim: ImuSimulation, *args, **kwargs
+    ) -> tuple[Array, gtsam.Unit3]: ...
 
 
 def timeit(func: EstimationMethod) -> EstimationMethod:
     import time
 
-    def wrapper(sim: ImuSimulation, *args, **kwargs) -> tuple[Array, Array]:
+    def wrapper(sim: ImuSimulation, *args, **kwargs) -> tuple[Array, gtsam.Unit3]:
         start = time.time()
         accel, grav = func(sim, *args, **kwargs)
         end = time.time()
 
         cos_grav_angle = (
-            grav @ sim.gravity / (np.linalg.norm(grav) * np.linalg.norm(gravity))
+            grav.point3()
+            @ sim.gravity
+            / (np.linalg.norm(grav.point3()) * np.linalg.norm(gravity))
         )
         grav_angle = np.arccos(cos_grav_angle) * 180 / np.pi
 
@@ -58,21 +62,7 @@ def graph_estimation(
     ],
     sim: ImuSimulation,
     bias_prior: Optional[float] = None,
-) -> tuple[Array, Array]:
-    def gravity_magnitude_prior(
-        this: gtsam.CustomFactor,
-        values: gtsam.Values,
-        jacobians: gtsam.JacobianVector,
-    ) -> Array:
-        gravity = values.atVector(this.keys()[0])
-        norm2 = gravity @ gravity
-        if jacobians is not None:
-            if norm2 > 1e-8:
-                jacobians[0] = 2 * gravity.reshape(1, 3)
-            else:
-                jacobians[0] = np.zeros((1, 3))
-        return np.array([norm2 - 9.81**2])
-
+) -> tuple[Array, gtsam.Unit3]:
     windows = sim.summarize(every=0.1)
 
     # Fill in graph
@@ -89,14 +79,6 @@ def graph_estimation(
         )
         graph.push_back(c)
 
-    # Add constraint on gravity magnitude
-    c = gtsam.CustomFactor(
-        gtsam.Constrained.All(1),
-        [1],
-        gravity_magnitude_prior,
-    )
-    graph.push_back(c)
-
     # add prior on accel bias
     if bias_prior is not None:
         graph.addPriorVector(
@@ -107,29 +89,28 @@ def graph_estimation(
 
     accel = np.array([s.accel for s in sim.state])
     gravity_init = -np.mean(accel, axis=0)
-    gravity_init *= 9.81 / np.linalg.norm(gravity_init)
+    gravity_init = gtsam.Unit3(gravity_init)
 
     # Fill in initial values
     values = gtsam.Values()
     # Accel bias
     values.insert_vector(0, np.zeros(3))
     # Gravity
-    values.insert_vector(1, gravity_init)
+    values.insert_unit3(1, gravity_init)
 
     # Optimize
     lm_params = gtsam.LevenbergMarquardtParams()
     # lm_params.setVerbosityLM("SUMMARY")
     optimizer = gtsam.LevenbergMarquardtOptimizer(graph, values, lm_params)
     result = optimizer.optimize()
-
-    return result.atVector(0), result.atVector(1)
+    return result.atVector(0), result.atUnit3(1)
 
 
 # ------------------------- Methods that use GT Velocity ------------------------- #
 def estimate_graph_gt_vel_p_only(
     sim: ImuSimulation,
     bias_prior: Optional[float] = None,
-) -> tuple[Array, Array]:
+) -> tuple[Array, gtsam.Unit3]:
     def error(
         pim: gtsam.PreintegratedCombinedMeasurements,
         prev: State,
@@ -141,7 +122,7 @@ def estimate_graph_gt_vel_p_only(
     ) -> Array:
         # Will have to dig into to see if I can fix
         accel_bias = values.atVector(this.keys()[0])
-        gravity = values.atVector(this.keys()[1])
+        gravity = values.atUnit3(this.keys()[1])
 
         R0 = start.rotation
         v0 = start.velocity
@@ -152,15 +133,16 @@ def estimate_graph_gt_vel_p_only(
         corr = pim.biasCorrectedDelta(gtsam.ConstantBias(accel_bias, sim.gyro_bias))
 
         dt = pim.deltaTij()
+        grav_scale = 0.5 * dt**2 * 9.81
 
         if jacobians is not None:
             # Position in the middle
             jacobians[0] = R0.matrix() @ pim.preintegrated_H_biasAcc()[3:6]
-            jacobians[1] = np.eye(3) * (0.5 * dt**2)
+            jacobians[1] = np.eye(3) * grav_scale @ gravity.basis()
 
         # return R0.rotate(corr[3:6]) + 0.5 * gravity * dt**2
 
-        p1hat = R0.rotate(corr[3:6]) + p0 + v0 * dt + 0.5 * gravity * dt**2
+        p1hat = R0.rotate(corr[3:6]) + p0 + v0 * dt + grav_scale * gravity.point3()
         return p1hat - p1
 
     return graph_estimation(error, sim, bias_prior)
@@ -169,7 +151,7 @@ def estimate_graph_gt_vel_p_only(
 def estimate_graph_gt_vel_v_only(
     sim: ImuSimulation,
     bias_prior: Optional[float] = None,
-) -> tuple[Array, Array]:
+) -> tuple[Array, gtsam.Unit3]:
     def error(
         pim: gtsam.PreintegratedCombinedMeasurements,
         prev: State,
@@ -181,7 +163,7 @@ def estimate_graph_gt_vel_v_only(
     ) -> Array:
         # Will have to dig into to see if I can fix
         accel_bias = values.atVector(this.keys()[0])
-        gravity = values.atVector(this.keys()[1])
+        gravity = values.atUnit3(this.keys()[1])
 
         R0 = start.rotation
         v0 = start.velocity
@@ -191,13 +173,14 @@ def estimate_graph_gt_vel_v_only(
         corr = pim.biasCorrectedDelta(gtsam.ConstantBias(accel_bias, sim.gyro_bias))
 
         dt = pim.deltaTij()
+        grav_scale = dt * 9.81
 
         if jacobians is not None:
             # Position in the middle
             jacobians[0] = R0.matrix() @ pim.preintegrated_H_biasAcc()[6:9]
-            jacobians[1] = np.eye(3) * dt
+            jacobians[1] = np.eye(3) * dt * 9.81 @ gravity.basis()
 
-        v1hat = R0.rotate(corr[6:9]) + v0 + gravity * dt
+        v1hat = R0.rotate(corr[6:9]) + v0 + gravity.point3() * grav_scale
         return v1hat - v1
 
     return graph_estimation(error, sim, bias_prior)
@@ -207,7 +190,7 @@ def estimate_graph_gt_vel_v_only(
 def estimate_graph_est_vel_p_only(
     sim: ImuSimulation,
     bias_prior: Optional[float] = None,
-) -> tuple[Array, Array]:
+) -> tuple[Array, gtsam.Unit3]:
     def error(
         pim: gtsam.PreintegratedCombinedMeasurements,
         prev: State,
@@ -219,7 +202,7 @@ def estimate_graph_est_vel_p_only(
     ) -> Array:
         # Will have to dig into to see if I can fix
         accel_bias = values.atVector(this.keys()[0])
-        gravity = values.atVector(this.keys()[1])
+        gravity = values.atUnit3(this.keys()[1])
 
         R0 = curr.rotation
         p0 = curr.position
@@ -230,15 +213,14 @@ def estimate_graph_est_vel_p_only(
         corr = pim.biasCorrectedDelta(gtsam.ConstantBias(accel_bias, sim.gyro_bias))
 
         dt = pim.deltaTij()
+        grav_scale = 0.5 * dt**2 * 9.81
 
         if jacobians is not None:
             # Position in the middle
             jacobians[0] = R0.matrix() @ pim.preintegrated_H_biasAcc()[3:6]
-            jacobians[1] = np.eye(3) * (0.5 * dt**2)
+            jacobians[1] = np.eye(3) * grav_scale @ gravity.basis()
 
-        # return R0.rotate(corr[3:6]) + 0.5 * gravity * dt**2
-
-        p1hat = R0.rotate(corr[3:6]) + p0 + v0 * dt + 0.5 * gravity * dt**2
+        p1hat = R0.rotate(corr[3:6]) + p0 + v0 * dt + grav_scale * gravity.point3()
         return p1hat - p1
 
     return graph_estimation(error, sim, bias_prior)
@@ -247,7 +229,7 @@ def estimate_graph_est_vel_p_only(
 def estimate_graph_est_vel_v_only(
     sim: ImuSimulation,
     bias_prior: Optional[float] = None,
-) -> tuple[Array, Array]:
+) -> tuple[Array, gtsam.Unit3]:
     def error(
         pim: gtsam.PreintegratedCombinedMeasurements,
         prev: State,
@@ -259,7 +241,7 @@ def estimate_graph_est_vel_v_only(
     ) -> Array:
         # Will have to dig into to see if I can fix
         accel_bias = values.atVector(this.keys()[0])
-        gravity = values.atVector(this.keys()[1])
+        gravity = values.atUnit3(this.keys()[1])
 
         R0 = curr.rotation
         v0 = (curr.position - prev.position) / pim.deltaTij()
@@ -269,12 +251,14 @@ def estimate_graph_est_vel_v_only(
         corr = pim.biasCorrectedDelta(gtsam.ConstantBias(accel_bias, sim.gyro_bias))
 
         dt = pim.deltaTij()
+        grav_scale = dt * 9.81
+
         if jacobians is not None:
             # Position in the middle
             jacobians[0] = R0.matrix() @ pim.preintegrated_H_biasAcc()[6:9]
-            jacobians[1] = np.eye(3) * dt
+            jacobians[1] = np.eye(3) * grav_scale @ gravity.basis()
 
-        v1hat = R0.rotate(corr[6:9]) + v0 + gravity * dt
+        v1hat = R0.rotate(corr[6:9]) + v0 + gravity.point3() * grav_scale
         return v1hat - v1
 
     return graph_estimation(error, sim, bias_prior)
@@ -283,7 +267,7 @@ def estimate_graph_est_vel_v_only(
 def estimate_graph_no_vp(
     sim: ImuSimulation,
     bias_prior: Optional[float] = None,
-) -> tuple[Array, Array]:
+) -> tuple[Array, gtsam.Unit3]:
     def error(
         pim: gtsam.PreintegratedCombinedMeasurements,
         prev: State,
@@ -295,30 +279,86 @@ def estimate_graph_no_vp(
     ) -> Array:
         # Will have to dig into to see if I can fix
         accel_bias = values.atVector(this.keys()[0])
-        gravity = values.atVector(this.keys()[1])
+        gravity = values.atUnit3(this.keys()[1])
 
         R0 = start.rotation
 
         corr = pim.biasCorrectedDelta(gtsam.ConstantBias(accel_bias, sim.gyro_bias))
 
         dt = pim.deltaTij()
+        grav_scale = 0.5 * dt**2 * 9.81
 
         if jacobians is not None:
             # Position in the middle
             jacobians[0] = R0.matrix() @ pim.preintegrated_H_biasAcc()[3:6]
-            jacobians[1] = np.eye(3) * (0.5 * dt**2)
+            jacobians[1] = np.eye(3) * grav_scale @ gravity.basis()
 
-        return R0.rotate(corr[3:6]) + 0.5 * gravity * dt**2
+        return R0.rotate(corr[3:6]) + grav_scale * gravity.point3()
 
     return graph_estimation(error, sim, bias_prior)
 
 
-def estimate_naive(sim: ImuSimulation) -> tuple[Array, Array]:
+# def estimate_analytic(sim: ImuSimulation) -> tuple[Array, gtsam.Unit3]:
+#     windows = sim.summarize(every=0.1)
+#     preints = [w.preint(bias_gyro=sim.gyro_bias) for w in windows[1:-1]]
+
+#     # TODO: I'm not handling bias_hat properly here, it should be a negative correction later
+#     # Shouldn't matter as it's zero for now
+
+#     R0s = [w.states[0].rotation.matrix() for w in windows[1:-1]]
+
+#     # First form our linear system
+#     H = np.concatenate(
+#         [R @ p.preintegrated_H_biasAcc()[3:6] for R, p in zip(R0s, preints)], axis=0
+#     )
+#     G = np.concatenate([0.5 * p.deltaTij() ** 2 * np.eye(3) for p in preints], axis=0)
+#     Alst = np.concatenate([H, G], axis=1)
+
+#     init_bias = gtsam.ConstantBias(np.zeros(3), sim.gyro_bias)
+#     xi = np.concatenate(
+#         [R @ p.biasCorrectedDelta(init_bias)[3:6] for R, p in zip(R0s, preints)],
+#         axis=0,
+#     )
+#     p0 = np.array([w.states[0].position for w in windows[1:-1]])
+#     p1 = np.array([w.states[1].position for w in windows[1:-1]])
+#     dt_v0 = np.array(
+#         [
+#             p.deltaTij()
+#             * (next.states[0].velocity - prev.states[0].velocity)
+#             / (2 * p.deltaTij())
+#             for p, prev, next in zip(preints, windows[:-2], windows[2:])
+#         ]
+#     )
+#     blst = xi + p0 + dt_v0 - p1
+
+#     # Now solve polynomial for constrained opt
+#     Abig = Alst.T @ Alst
+#     A = 2 * Abig[:3, :3]
+#     B = 2 * Abig[:3, 3:6]
+#     D = 2 * Abig[3:6, 3:6]
+#     m = -2 * blst.T @ A
+
+#     S = D - B.T @ np.linalg.inv(A) @ B
+#     U = np.linalg.trace(S) * np.eye(3) - S
+#     Apow = lambda S: np.linalg.det(S) * np.linalg.inv(S)
+#     X = 2 * Apow(S) + U @ U
+#     Y = Apow(S) @ U + U @ Apow(S)
+
+#     coeffs = np.zeros(6)
+
+#     Ainv = np.linalg.inv(A)
+#     mat = Ainv @ B @ B.T @ Ainv.T
+#     coeffs[4] = m.T
+
+#     print(xi.shape)
+
+
+def estimate_naive(sim: ImuSimulation) -> tuple[Array, gtsam.Unit3]:
     accel_measurements = np.array([s.accel for s in sim.state])
     gravity_unnorm = -np.mean(accel_measurements, axis=0)
-    gravity = gravity_unnorm * 9.81 / np.linalg.norm(gravity_unnorm)
+    gravity = gravity_unnorm / np.linalg.norm(gravity_unnorm)
 
-    return np.zeros(3), gravity
+    return np.zeros(3), gtsam.Unit3(gravity)
 
 
 np.random.seed(0)
@@ -343,8 +383,10 @@ print("Ground truths:", sim.gravity, sim.accel_bias)
 timeit(estimate_naive)(sim)
 timeit(estimate_graph_gt_vel_p_only)(sim)
 timeit(estimate_graph_est_vel_p_only)(sim)
-timeit(estimate_graph_gt_vel_v_only)(sim)
-timeit(estimate_graph_est_vel_v_only)(sim)
-timeit(estimate_graph_no_vp)(sim)
+# timeit(estimate_graph_gt_vel_v_only)(sim)
+# timeit(estimate_graph_est_vel_v_only)(sim)
+# timeit(estimate_graph_no_vp)(sim)
+
+# print(estimate_analytic(sim))
 
 print("---- finished ----")

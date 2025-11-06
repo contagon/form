@@ -212,6 +212,25 @@ inline void make_gtsam_bindings(nb::module_ &m_) {
         .def("correctPIM", [](gtsam::NavState* self, const gtsam::Vector9& pimCorrection, double dt, const gtsam::Vector3& gravity){return self->correctPIM(pimCorrection, dt, gravity, boost::none);})
         .def("localCoordinates",[](gtsam::NavState* self, const gtsam::NavState& g){return self->localCoordinates(g);}, nb::arg("g"));
 
+    nb::class_<gtsam::Unit3>(m_, "Unit3")
+        .def(nb::init<>())
+        .def(nb::init<const gtsam::Point3&>(), nb::arg("pose"))
+        .def("print",[](gtsam::Unit3* self, string s){ self->print(s);}, nb::arg("s") = "")
+        .def("__repr__",
+                    [](const gtsam::Unit3& self, string s){
+                        gtsam::RedirectCout redirect;
+                        self.print(s);
+                        return redirect.str();
+                    }, nb::arg("s") = "")
+        .def("equals",[](gtsam::Unit3* self, const gtsam::Unit3& pose, double tol){return self->equals(pose, tol);}, nb::arg("pose"), nb::arg("tol"))
+        .def("basis",[](gtsam::Unit3* self){return self->basis();})
+        .def("skew",[](gtsam::Unit3* self){return self->skew();})
+        .def("point3",[](gtsam::Unit3* self){return self->point3();})
+        .def("dim",[](gtsam::Unit3* self){return self->dim();})
+        .def("retract",[](gtsam::Unit3* self, const gtsam::Vector& v){return self->retract(v);}, nb::arg("v"))
+        .def("localCoordinates",[](gtsam::Unit3* self, const gtsam::Unit3& s){return self->localCoordinates(s);}, nb::arg("s"))
+        .def_static("Dim",[](){return gtsam::Unit3::Dim();});
+
     
     // ------------------------- Containers ------------------------- //
     nb::class_<gtsam::Values>(m_, "Values")
@@ -249,6 +268,8 @@ inline void make_gtsam_bindings(nb::module_ &m_) {
         .def("insert",[](gtsam::Values* self, size_t j, const gtsam::Rot3& rot3){ self->insert(j, rot3);}, nb::arg("j"), nb::arg("rot3"))
         .def("insert_pose3",[](gtsam::Values* self, size_t j, const gtsam::Pose3& pose3){ self->insert(j, pose3);}, nb::arg("j"), nb::arg("pose3"))
         .def("insert",[](gtsam::Values* self, size_t j, const gtsam::Pose3& pose3){ self->insert(j, pose3);}, nb::arg("j"), nb::arg("pose3"))
+        .def("insert_unit3",[](gtsam::Values* self, size_t j, const gtsam::Unit3& unit3){ self->insert(j, unit3);}, nb::arg("j"), nb::arg("unit3"))
+        .def("insert",[](gtsam::Values* self, size_t j, const gtsam::Unit3& unit3){ self->insert(j, unit3);}, nb::arg("j"), nb::arg("unit3"))
         .def("insert_constant_bias",[](gtsam::Values* self, size_t j, const gtsam::imuBias::ConstantBias& constant_bias){ self->insert(j, constant_bias);}, nb::arg("j"), nb::arg("constant_bias"))
         .def("insert",[](gtsam::Values* self, size_t j, const gtsam::imuBias::ConstantBias& constant_bias){ self->insert(j, constant_bias);}, nb::arg("j"), nb::arg("constant_bias"))
         .def("insert_nav_state",[](gtsam::Values* self, size_t j, const gtsam::NavState& nav_state){ self->insert(j, nav_state);}, nb::arg("j"), nb::arg("nav_state"))
@@ -279,6 +300,7 @@ inline void make_gtsam_bindings(nb::module_ &m_) {
         .def("atPoint3",[](gtsam::Values* self, size_t j){return self->at<gtsam::Point3>(j);}, nb::arg("j"))
         .def("atRot3",[](gtsam::Values* self, size_t j){return self->at<gtsam::Rot3>(j);}, nb::arg("j"))
         .def("atPose3",[](gtsam::Values* self, size_t j){return self->at<gtsam::Pose3>(j);}, nb::arg("j"))
+        .def("atUnit3",[](gtsam::Values* self, size_t j){return self->at<gtsam::Unit3>(j);}, nb::arg("j"))
         .def("atConstantBias",[](gtsam::Values* self, size_t j){return self->at<gtsam::imuBias::ConstantBias>(j);}, nb::arg("j"))
         .def("atNavState",[](gtsam::Values* self, size_t j){return self->at<gtsam::NavState>(j);}, nb::arg("j"))
         .def("atVector",[](gtsam::Values* self, size_t j){return self->at<gtsam::Vector>(j);}, nb::arg("j"))
