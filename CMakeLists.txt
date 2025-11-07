@@ -29,12 +29,15 @@ FetchContent_MakeAvailable(tsl)
 
 # ------------------------- form ------------------------- #
 add_library(FORM
+	# Lidar-only
 	form/form.cpp
 	form/feature/factor.cpp
 	form/optimization/constraints.cpp
 	form/mapping/keyscanner.cpp
-	form/inertial/imu.cpp
+	# Inertial
 	form/form-inertial.cpp
+	form/inertial/imu.cpp
+	form/inertial/init_factor.cpp
 )
 target_sources(FORM
 	PUBLIC
@@ -54,6 +57,7 @@ target_sources(FORM
 		form/mapping/keyscanner.hpp
 		# inertial
 		form/inertial/imu.hpp
+		form/inertial/init_factor.hpp
 		# core
 		form/form.hpp
 		form/form-inertial.hpp

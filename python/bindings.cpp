@@ -9,6 +9,7 @@
 #include "form/form-inertial.hpp"
 #include "form/form.hpp"
 #include "form/inertial/imu.hpp"
+#include "form/inertial/init_factor.hpp"
 #include "form/utils.hpp"
 
 #include "gtsam_bindings.h"
@@ -16,6 +17,7 @@
 #include <cstdio>
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/linear/NoiseModel.h>
+#include <gtsam/navigation/CombinedImuFactor.h>
 #include <memory>
 #include <nanobind/eigen/dense.h>
 #include <nanobind/nanobind.h>
@@ -24,7 +26,6 @@
 #include <nanobind/stl/tuple.h>
 #include <nanobind/stl/variant.h>
 #include <nanobind/stl/vector.h>
-#include <utility>
 
 namespace nb = nanobind;
 namespace ev = evalio;
@@ -314,6 +315,10 @@ public:
 NB_MODULE(_core, m) {
   m.doc() = "Custom evalio pipeline example";
 
+  // gtsam bindings if we want them
+  auto m_gtsam = m.def_submodule("gtsam", "GTSAM bindings");
+  make_gtsam_bindings(m_gtsam);
+
   nb::module_ eval = nb::module_::import_("evalio");
 
   // Only have to override the static methods here
@@ -331,6 +336,17 @@ NB_MODULE(_core, m) {
       .def_static("default_params", &FORMInertial::default_params)
       .def("get_last_integrated_imu", &FORMInertial::get_last_integrated_imu)
       .def("current_imu_bias", &FORMInertial::current_imu_bias);
+
+  nb::class_<form::GravityBiasPreintFactor, gtsam::NoiseModelFactor>(
+      m, "GravityBiasPreintFactor")
+      .def(nb::init<const gtsam::PreintegratedCombinedMeasurements &,
+                    const gtsam::Pose3 &, const gtsam::Pose3 &,
+                    const gtsam::Velocity3 &, gtsam::Key, gtsam::Key>(),
+           nb::arg("preint_imu"), nb::arg("x0"), nb::arg("x1"), nb::arg("v0"),
+           nb::arg("bias_key"), nb::arg("gravity_key"));
+  // .def("evaluateError", &form::GravityBiasPreintFactor::evaluateError,
+  //      nb::arg("bias"), nb::arg("gravity"), nb::arg("H1") = nullptr,
+  //      nb::arg("H2") = nullptr);
 
   // Expose extraction methods too
   nb::class_<form::FeatureExtractor::Params>(m, "KeypointExtractionParams")
@@ -378,8 +394,4 @@ NB_MODULE(_core, m) {
 
     return std::make_tuple(planar_points, normals, point_points);
   });
-
-  // gtsam bindings if we want them
-  auto m_gtsam = m.def_submodule("gtsam", "GTSAM bindings");
-  make_gtsam_bindings(m_gtsam);
 }

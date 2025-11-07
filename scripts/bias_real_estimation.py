@@ -11,18 +11,29 @@ from evalio import datasets as ds, types as ty
 
 sys.path.append(".")
 from imu_sim import Array
-from form import gtsam
+from form import gtsam, GravityBiasPreintFactor
 import numpy as np
 
 np.set_printoptions(precision=3, suppress=True)
 
 
 @overload
-def convert(v: ty.SO3) -> gtsam.Rot3: ...  # type: ignore
+def convert(v: ty.SO3) -> gtsam.Rot3: ...
+
+
+@overload
+def convert(v: ty.SE3) -> gtsam.Pose3: ...
 
 
 def convert(v: Any) -> Any:
-    return gtsam.Rot3(x=v.qx, y=v.qy, z=v.qz, w=v.qw)
+    if isinstance(v, ty.SO3):
+        return gtsam.Rot3(x=v.qx, y=v.qy, z=v.qz, w=v.qw)
+    elif isinstance(v, ty.SE3):
+        R = convert(v.rot)
+        t = v.trans
+        return gtsam.Pose3(R, t)
+    else:
+        raise TypeError(f"Cannot convert type {type(v)}")
 
 
 def timeit(
@@ -342,10 +353,6 @@ def estimate_accel_v_only(
         R0 = convert(curr[1].rot)
         v0 = (curr[1].trans - prev[1].trans) / (curr[0] - prev[0]).to_sec()
         v1 = (next[1].trans - curr[1].trans) / (next[0] - curr[0]).to_sec()
-        if (next[0] - curr[0]).to_sec() == 0:
-            print(next[0], curr[0], prev[0])
-            print((next[0] - curr[0]).to_sec(), next[0], curr[0], next[0] - curr[0])
-            raise ValueError("Zero time difference in velocity computation")
 
         corr = pim.biasCorrectedDelta(gtsam.ConstantBias(accel_bias, gyro_bias))
 
@@ -399,6 +406,48 @@ def estimate_accel_no_vp(
     return graph_estimation(error, windows, gyro_bias, grav_init, bias_prior)
 
 
+def estimate_accel_p_cpp(
+    windows: list[ImuWindow],
+    gyro_bias: Array,
+    gravity_init: gtsam.Unit3,
+    bias_prior: Optional[float] = None,
+) -> tuple[Array, gtsam.Unit3]:
+    # Fill in graph
+    graph = gtsam.NonlinearFactorGraph()
+    for i in range(1, len(windows) - 1):
+        prev = windows[i - 1].start
+        curr = windows[i].start
+        next = windows[i + 1].start
+
+        v0 = (next[1].trans - prev[1].trans) / (next[0] - prev[0]).to_sec()
+        pim = windows[i].preint(bias_gyro=gyro_bias)
+
+        c = GravityBiasPreintFactor(pim, convert(curr[1]), convert(next[1]), v0, 0, 1)
+        graph.push_back(c)
+
+    # add prior on accel bias
+    if bias_prior is not None:
+        graph.addPriorVector(
+            0,
+            np.zeros(3),
+            gtsam.Isotropic.Sigma(3, bias_prior),
+        )
+
+    # Fill in initial values
+    values = gtsam.Values()
+    # Accel bias
+    values.insert_vector(0, np.zeros(3))
+    # Gravity
+    values.insert_unit3(1, gravity_init)
+
+    # Optimize
+    lm_params = gtsam.LevenbergMarquardtParams()
+    # lm_params.setVerbosityLM("SUMMARY")
+    optimizer = gtsam.LevenbergMarquardtOptimizer(graph, values, lm_params)
+    result = optimizer.optimize()
+    return result.atVector(0), result.atUnit3(1)
+
+
 def estimate_accel_naive(
     mm: list[ty.ImuMeasurement], init: ty.SE3
 ) -> tuple[Array, gtsam.Unit3]:
@@ -414,13 +463,13 @@ def estimate_accel_naive(
 
 
 if __name__ == "__main__":
-    # data = ds.OxfordSpires.blenheim_palace_05
-    # length = 10.0
-    # every = 0.1
+    data = ds.OxfordSpires.blenheim_palace_05
+    length = 10.0
+    every = 0.1
 
-    data = ds.NewerCollege2020.short_experiment
-    length = 80.0
-    every = 0.2
+    # data = ds.NewerCollege2020.short_experiment
+    # length = 80.0
+    # every = 0.1
 
     one_sec_imu = int(data.imu_params().rate)
 
@@ -452,9 +501,10 @@ if __name__ == "__main__":
     timeit(estimate_accel_v_only)(windows, gyro_bias, g_naive, 1e-1)
     timeit(estimate_accel_p_only)(windows, gyro_bias, g_naive)
     timeit(estimate_accel_v_only)(windows, gyro_bias, g_naive)
+    timeit(estimate_accel_p_cpp)(windows, gyro_bias, g_naive)
 
     # ------------------------- Plot ------------------------- #
-    one_sec_windows = int(1.0 / every) * 30
+    one_sec_windows = int(1.0 / every)
     priors = [None, 1e0, 0.5, 1e-1]
 
     bias = np.zeros((len(priors), len(windows) - one_sec_windows, 3))
@@ -462,7 +512,7 @@ if __name__ == "__main__":
 
     for j, p in tqdm(enumerate(priors), total=len(priors)):
         for i in range(one_sec_windows, len(windows)):
-            b, g = estimate_accel_p_only(windows[:i], gyro_bias, g_naive, p)
+            b, g = estimate_accel_p_cpp(windows[:i], gyro_bias, g_naive, p)
             bias[j, i - one_sec_windows] = b
             grav[j, i - one_sec_windows] = g.point3()
 
