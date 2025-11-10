@@ -463,23 +463,30 @@ def estimate_accel_naive(
 
 
 if __name__ == "__main__":
-    data = ds.OxfordSpires.blenheim_palace_05
-    length = 10.0
-    every = 0.1
-
-    # data = ds.NewerCollege2020.short_experiment
-    # length = 80.0
+    # data = ds.OxfordSpires.blenheim_palace_05
+    # length = 10.0
     # every = 0.1
+
+    data = ds.NewerCollege2020.short_experiment
+    length = 80.0
+    every = 0.2
 
     one_sec_imu = int(data.imu_params().rate)
 
-    # TODO: Try plotting over a range of seconds to see how things do
-    # Can just index windows iteratively to see how it does
     all_mm, windows = summarize_windows(
         data,
         every=every,
         seconds=length,
     )
+
+    delta_angles = np.array(
+        [
+            convert(w.end[1].rot).localCoordinates(convert(windows[0].start[1].rot))
+            for w in windows
+        ]
+    )
+    delta_angles = np.linalg.norm(delta_angles, axis=1)
+    cum_angles = np.cumsum(delta_angles)
 
     print()
     print(f"Dataset: {data.full_name}")
@@ -504,8 +511,8 @@ if __name__ == "__main__":
     timeit(estimate_accel_p_cpp)(windows, gyro_bias, g_naive)
 
     # ------------------------- Plot ------------------------- #
-    one_sec_windows = int(1.0 / every)
-    priors = [None, 1e0, 0.5, 1e-1]
+    one_sec_windows = int(1.0 / every) * 30
+    priors = [None, 1e2, 5e1, 1e1]
 
     bias = np.zeros((len(priors), len(windows) - one_sec_windows, 3))
     grav = np.zeros((len(priors), len(windows) - one_sec_windows, 3))
@@ -518,9 +525,17 @@ if __name__ == "__main__":
 
     from matplotlib import pyplot as plt
 
-    fig, ax = plt.subplots(2, 3, figsize=(12, 6), sharex=True, layout="constrained")
+    fig, ax = plt.subplots(2, 4, figsize=(12, 6), sharex=True, layout="constrained")
 
     t = np.arange(bias.shape[1]) * every
+
+    ax[0, 3].plot(t, delta_angles[one_sec_windows:], label="Delta Angle Change")
+    ax[0, 3].set_title("Delta Angle Change Over Time")
+    ax[0, 3].grid()
+
+    ax[1, 3].plot(t, cum_angles[one_sec_windows:], label="Cumulative Angle Change")
+    ax[1, 3].set_title("Cumulative Angle Change Over Time")
+    ax[1, 3].grid()
 
     for i in range(3):
         ax[0, i].axhline(

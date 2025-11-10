@@ -298,38 +298,47 @@ def estimate_graph_no_vp(
     return graph_estimation(error, sim, bias_prior)
 
 
-# def estimate_analytic(sim: ImuSimulation) -> tuple[Array, gtsam.Unit3]:
-#     windows = sim.summarize(every=0.1)
-#     preints = [w.preint(bias_gyro=sim.gyro_bias) for w in windows[1:-1]]
+def estimate_analytic(sim: ImuSimulation) -> tuple[Array, gtsam.Unit3]:
+    windows = sim.summarize(every=0.1)
+    preints = [w.preint(bias_gyro=sim.gyro_bias) for w in windows[1:-1]]
 
-#     # TODO: I'm not handling bias_hat properly here, it should be a negative correction later
-#     # Shouldn't matter as it's zero for now
+    # TODO: I'm not handling bias_hat properly here, it should be a negative correction later
+    # Shouldn't matter as it's zero for now
 
-#     R0s = [w.states[0].rotation.matrix() for w in windows[1:-1]]
+    R0s = [w.states[0].rotation.matrix() for w in windows[1:-1]]
 
-#     # First form our linear system
-#     H = np.concatenate(
-#         [R @ p.preintegrated_H_biasAcc()[3:6] for R, p in zip(R0s, preints)], axis=0
-#     )
-#     G = np.concatenate([0.5 * p.deltaTij() ** 2 * np.eye(3) for p in preints], axis=0)
-#     Alst = np.concatenate([H, G], axis=1)
+    # First form our linear system
+    H = np.concatenate(
+        [R @ p.preintegrated_H_biasAcc()[3:6] for R, p in zip(R0s, preints)], axis=0
+    )
+    G = np.concatenate([0.5 * p.deltaTij() ** 2 * np.eye(3) for p in preints], axis=0)
+    Alst = np.concatenate([H, G], axis=1)
 
-#     init_bias = gtsam.ConstantBias(np.zeros(3), sim.gyro_bias)
-#     xi = np.concatenate(
-#         [R @ p.biasCorrectedDelta(init_bias)[3:6] for R, p in zip(R0s, preints)],
-#         axis=0,
-#     )
-#     p0 = np.array([w.states[0].position for w in windows[1:-1]])
-#     p1 = np.array([w.states[1].position for w in windows[1:-1]])
-#     dt_v0 = np.array(
-#         [
-#             p.deltaTij()
-#             * (next.states[0].velocity - prev.states[0].velocity)
-#             / (2 * p.deltaTij())
-#             for p, prev, next in zip(preints, windows[:-2], windows[2:])
-#         ]
-#     )
-#     blst = xi + p0 + dt_v0 - p1
+    Asq = Alst.T @ Alst
+    print(np.linalg.matrix_rank(Alst))
+    print(np.linalg.cond(Alst))
+    print(np.linalg.cond(Asq))
+    print(Asq)
+    # print(Alst[:24])
+
+    init_bias = gtsam.ConstantBias(np.zeros(3), sim.gyro_bias)
+    xi = np.concatenate(
+        [R @ p.biasCorrectedDelta(init_bias)[3:6] for R, p in zip(R0s, preints)],
+        axis=0,
+    )
+    p0 = np.concatenate([w.states[0].position for w in windows[1:-1]])
+    p1 = np.concatenate([w.states[1].position for w in windows[1:-1]])
+    dt_v0 = np.concatenate(
+        [
+            p.deltaTij()
+            * (next.states[0].velocity - prev.states[0].velocity)
+            / (2 * p.deltaTij())
+            for p, prev, next in zip(preints, windows[:-2], windows[2:])
+        ]
+    )
+    blst = xi + p0 + dt_v0 - p1
+    # print(blst[:24])
+
 
 #     # Now solve polynomial for constrained opt
 #     Abig = Alst.T @ Alst
@@ -374,8 +383,8 @@ sim = ImuSimulation(
     accel_bias=np.array([0.4, -0.05, 0.2]),
     #### gyroscope
     gyro_gen=lambda t: np.array([-0.4, 0.3, 0.2]) * np.sin(t / 1.3),
-    gyro_noise_sigma=1e-4,
-    gyro_bias=np.array([0.01, -0.02, 0.5]),
+    # gyro_noise_sigma=1e-4,
+    # gyro_bias=np.array([0.01, -0.02, 0.5]),
     total_time=20.0,
 )
 
@@ -383,9 +392,11 @@ print("Ground truths:", sim.gravity, sim.accel_bias)
 timeit(estimate_naive)(sim)
 timeit(estimate_graph_gt_vel_p_only)(sim)
 timeit(estimate_graph_est_vel_p_only)(sim)
-# timeit(estimate_graph_gt_vel_v_only)(sim)
-# timeit(estimate_graph_est_vel_v_only)(sim)
+timeit(estimate_graph_gt_vel_v_only)(sim)
+timeit(estimate_graph_est_vel_v_only)(sim)
 # timeit(estimate_graph_no_vp)(sim)
+
+estimate_analytic(sim)
 
 # print(estimate_analytic(sim))
 
