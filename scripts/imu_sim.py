@@ -125,7 +125,7 @@ class ImuSimulation:
             v_prev = prev.velocity
             p_prev = prev.position
 
-            true_accel = self.accel_gen(i * dt) - R_prev.unrotate(self.gravity)
+            true_accel = self.accel_gen(i * dt) - R_prev.rotate(self.gravity)
             true_gyro = self.gyro_gen(i * dt)
 
             noisy_accel = (

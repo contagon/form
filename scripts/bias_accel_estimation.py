@@ -37,7 +37,10 @@ def timeit(func: EstimationMethod) -> EstimationMethod:
         bias_error = np.linalg.norm(bias_error)
 
         name = func.__name__.split("_", 1)[1]
-        args = " ".join([f"{a:.1f}" for a in args])
+        try:
+            args = " ".join([f"{a:.1f}" for a in args])
+        except:
+            args = ""
 
         print(
             f"[{name:^20}][{args:^6}]: {end - start:.3f}s, g: {grav_angle:.3f}°, b: {bias_error:.3f}"
@@ -339,35 +342,46 @@ def estimate_analytic(sim: ImuSimulation) -> tuple[Array, gtsam.Unit3]:
     blst = xi + p0 + dt_v0 - p1
     # print(blst[:24])
 
+    #     # Now solve polynomial for constrained opt
+    #     Abig = Alst.T @ Alst
+    #     A = 2 * Abig[:3, :3]
+    #     B = 2 * Abig[:3, 3:6]
+    #     D = 2 * Abig[3:6, 3:6]
+    #     m = -2 * blst.T @ A
 
-#     # Now solve polynomial for constrained opt
-#     Abig = Alst.T @ Alst
-#     A = 2 * Abig[:3, :3]
-#     B = 2 * Abig[:3, 3:6]
-#     D = 2 * Abig[3:6, 3:6]
-#     m = -2 * blst.T @ A
+    #     S = D - B.T @ np.linalg.inv(A) @ B
+    #     U = np.linalg.trace(S) * np.eye(3) - S
+    #     Apow = lambda S: np.linalg.det(S) * np.linalg.inv(S)
+    #     X = 2 * Apow(S) + U @ U
+    #     Y = Apow(S) @ U + U @ Apow(S)
 
-#     S = D - B.T @ np.linalg.inv(A) @ B
-#     U = np.linalg.trace(S) * np.eye(3) - S
-#     Apow = lambda S: np.linalg.det(S) * np.linalg.inv(S)
-#     X = 2 * Apow(S) + U @ U
-#     Y = Apow(S) @ U + U @ Apow(S)
+    #     coeffs = np.zeros(6)
 
-#     coeffs = np.zeros(6)
+    #     Ainv = np.linalg.inv(A)
+    #     mat = Ainv @ B @ B.T @ Ainv.T
+    #     coeffs[4] = m.T
 
-#     Ainv = np.linalg.inv(A)
-#     mat = Ainv @ B @ B.T @ Ainv.T
-#     coeffs[4] = m.T
-
-#     print(xi.shape)
+    #     print(xi.shape)
 
 
-def estimate_naive(sim: ImuSimulation) -> tuple[Array, gtsam.Unit3]:
+# def estimate_naive(sim: ImuSimulation, *args) -> tuple[Array, gtsam.Unit3]:
+#     accel_measurements = np.array([s.accel for s in sim.state])
+#     gravity_unnorm = -np.mean(accel_measurements, axis=0)
+#     gravity = gravity_unnorm / np.linalg.norm(gravity_unnorm)
+
+#     return np.zeros(3), gtsam.Unit3(gravity)
+
+
+def estimate_naive(sim: ImuSimulation, init: gtsam.Rot3) -> tuple[Array, gtsam.Unit3]:
     accel_measurements = np.array([s.accel for s in sim.state])
     gravity_unnorm = -np.mean(accel_measurements, axis=0)
     gravity = gravity_unnorm / np.linalg.norm(gravity_unnorm)
 
-    return np.zeros(3), gtsam.Unit3(gravity)
+    accel = 9.81 * gravity - gravity_unnorm
+
+    gravity = init.unrotate(gravity)
+
+    return accel, gtsam.Unit3(gravity)
 
 
 np.random.seed(0)
@@ -389,14 +403,14 @@ sim = ImuSimulation(
 )
 
 print("Ground truths:", sim.gravity, sim.accel_bias)
-timeit(estimate_naive)(sim)
+timeit(estimate_naive)(sim, sim.state[0].rotation)
 timeit(estimate_graph_gt_vel_p_only)(sim)
 timeit(estimate_graph_est_vel_p_only)(sim)
 timeit(estimate_graph_gt_vel_v_only)(sim)
 timeit(estimate_graph_est_vel_v_only)(sim)
 # timeit(estimate_graph_no_vp)(sim)
 
-estimate_analytic(sim)
+# estimate_analytic(sim)
 
 # print(estimate_analytic(sim))
 

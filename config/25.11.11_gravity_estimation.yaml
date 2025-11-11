@@ -1,0 +1,14 @@
+pipelines:
+  - pipeline: form-inertial
+    name: original2
+    point_feats_per_sector: 0
+    prior_scale: 0.1
+    planar_sigma: 0.01
+
+datasets:
+  - name: oxford_spires/blenheim_palace_02
+    length: 6000
+  # - name: oxford_spires_custom/blenheim_palace_02
+  #   length: 6000
+  - name: newer_college_2020/short_experiment
+    length: 2000

@@ -1,6 +1,7 @@
 #include "form/inertial/imu.hpp"
 #include <cassert>
 #include <deque>
+#include <gtsam/base/Vector.h>
 #include <gtsam/navigation/CombinedImuFactor.h>
 #include <gtsam/navigation/NavState.h>
 #include <optional>
@@ -141,16 +142,15 @@ ImuHandler::compute_gravity_alignment() noexcept {
   imu_gravity /= countDouble;
   body_gyro /= countDouble;
 
-  // Align orientation with gravity
-  const gtsam::Pose3 world_T_imu(
-      align(m_params.preintegration->n_gravity.normalized(),
-            imu_gravity.normalized()),
-      gtsam::Point3::Zero());
+  const gtsam::Pose3 world_T_imu = gtsam::Pose3::Identity();
 
-  const gtsam::imuBias::ConstantBias imu_bias(
-      world_T_imu.rotation().unrotate(m_params.preintegration->n_gravity) -
-          imu_gravity,
-      body_gyro);
+  // Compute direction of gravity in identity frame
+  Eigen::Vector3d imu_gravity_normed = imu_gravity.normalized() * 9.81;
+  Eigen::Vector3d bias_accel = imu_gravity_normed - imu_gravity;
+  m_params.preintegration->n_gravity =
+      world_T_imu.rotation().unrotate(imu_gravity_normed);
+
+  const gtsam::imuBias::ConstantBias imu_bias(bias_accel, body_gyro);
 
   return std::make_pair(world_T_imu, imu_bias);
 }

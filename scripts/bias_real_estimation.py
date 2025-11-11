@@ -457,7 +457,7 @@ def estimate_accel_naive(
 
     accel = 9.81 * gravity - gravity_unnorm
 
-    gravity = convert(init.rot).rotate(gravity)
+    gravity = convert(init.rot).unrotate(gravity)
 
     return accel, gtsam.Unit3(gravity)
 
@@ -510,6 +510,7 @@ if __name__ == "__main__":
     timeit(estimate_accel_v_only)(windows, gyro_bias, g_naive)
     timeit(estimate_accel_p_cpp)(windows, gyro_bias, g_naive)
 
+    quit()
     # ------------------------- Plot ------------------------- #
     one_sec_windows = int(1.0 / every)
     priors = [None, 1e2, 5e1, 1e1]
