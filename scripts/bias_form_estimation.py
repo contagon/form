@@ -2,16 +2,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import partial
+from pathlib import Path
 import sys
 from typing import Any, Optional, cast, overload
 from typing_extensions import Callable
 from tqdm import tqdm
 
-from evalio import datasets as ds, types as ty
+from evalio import datasets as ds, types as ty, stats as st
+from evalio.types.base import M
 
 sys.path.append(".")
 from imu_sim import Array
-from form import gtsam, GravityBiasPreintFactor
+from form import gtsam, GravityBiasPreintFactor, FORM
 import numpy as np
 
 np.set_printoptions(precision=3, suppress=True)
@@ -97,35 +99,19 @@ class ImuWindow:
 
 def summarize_windows(
     dataset: ds.Dataset,
-    every: float = 0.1,
-    seconds: float = 20.0,
+    poses: ty.Trajectory[M],
 ) -> tuple[list[ty.ImuMeasurement], list[ImuWindow]]:
-    # Gather ground truth poses
-    gt_og = dataset.ground_truth()
-
     first_imu = dataset.get_one_imu(0).stamp
     start_idx = 0
-    while gt_og.stamps[start_idx] < first_imu:
+    while poses.stamps[start_idx] < first_imu:
         start_idx += 1
-
-    # Keep a ground truth every `every` seconds
-    gt = ty.Trajectory()
-    prev_stamp = ty.Stamp.from_sec(0)
-    for i in range(start_idx, len(gt_og)):
-        # kludge to avoid floating point issues
-        if (gt_og.stamps[i] - prev_stamp).to_sec() >= every - 1e-4:
-            prev_stamp = gt_og.stamps[i]
-            gt.append(gt_og.stamps[i], gt_og.poses[i])
-
-        if (gt_og.stamps[i] - gt_og.stamps[start_idx]).to_sec() >= seconds:
-            break
 
     # Gather IMU measurements into windows
     windows: list[ImuWindow] = []
     all_mm: list[ty.ImuMeasurement] = []
 
     curr_idx = 1
-    curr = ImuWindow(mm=[], start=gt[0], end=gt[1])
+    curr = ImuWindow(mm=[], start=poses[0], end=poses[1])
     for mm in tqdm(dataset.imu()):
         all_mm.append(mm)
         # if it's too early, skip
@@ -141,10 +127,10 @@ def summarize_windows(
             curr.mm.append(mm_shifted)
 
             windows.append(curr)
-            if curr_idx + 1 >= len(gt):
+            if curr_idx + 1 >= len(poses):
                 break
             curr = ImuWindow(
-                mm=[mm_shifted, mm], start=gt[curr_idx], end=gt[curr_idx + 1]
+                mm=[mm_shifted, mm], start=poses[curr_idx], end=poses[curr_idx + 1]
             )
             curr_idx += 1
 
@@ -209,7 +195,7 @@ def estimate_gyro_naive(sim: list[ty.ImuMeasurement]) -> Array:
     return np.mean(gyro_measurements, axis=0)
 
 
-def estimate_gyro_linear(sim: list[ImuWindow]) -> Array:
+def estimate_gyro_linear(windows: list[ImuWindow]) -> Array:
     preints = [w.preint() for w in windows[:-1]]
 
     # Collect H matrix
@@ -463,26 +449,57 @@ def estimate_accel_naive(
 
 
 if __name__ == "__main__":
+    data = ds.OxfordSpires.blenheim_palace_05
+    data = ds.OxfordSpires.christ_church_01
     data = ds.OxfordSpires.blenheim_palace_02
-    length = 80.0
-    every = 0.1
+    length = 60.0
 
     # data = ds.NewerCollege2020.short_experiment
     # length = 80.0
-    # every = 0.2
+
+    out = ty.Experiment.from_pl_ds(FORM, data).setup()
+    if isinstance(out, Exception):
+        raise out
+    form, data = out
 
     one_sec_imu = int(data.imu_params().rate)
 
-    all_mm, windows = summarize_windows(
-        data,
-        every=every,
-        seconds=length,
+    # get poses from form
+    cache = (
+        Path(".cache/bias_form_estimation")
+        / data.full_name
+        / f"form_poses_{length}.csv"
     )
+    if cache.exists():
+        form_traj = ty.Trajectory.from_tum(cache)
+        if isinstance(form_traj, Exception):
+            raise form_traj
+    else:
+        num = int(length * data.lidar_params().rate) + 20
+        loop = tqdm(total=num)
+        for mm in data.lidar():
+            form.add_lidar(mm)
+            loop.update(1)
+            if loop.n >= num:
+                break
+        loop.close()
+
+        s, p = zip(*form.saved_estimates())
+        form_traj = ty.Trajectory(stamps=list(s), poses=list(p))
+        form_traj.to_file(cache)
+
+    gt_traj = data.ground_truth()
+
+    # align them
+    st.align(form_traj, gt_traj, True)
+
+    all_mm, windows_gt = summarize_windows(data, gt_traj)
+    all_mm, windows_form = summarize_windows(data, form_traj)
 
     delta_angles = np.array(
         [
-            convert(w.end[1].rot).localCoordinates(convert(windows[0].start[1].rot))
-            for w in windows
+            convert(w.end[1].rot).localCoordinates(convert(windows_gt[0].start[1].rot))
+            for w in windows_gt
         ]
     )
     delta_angles = np.linalg.norm(delta_angles, axis=1)
@@ -490,44 +507,45 @@ if __name__ == "__main__":
 
     print()
     print(f"Dataset: {data.full_name}")
-    delta = windows[0].start[1].inverse() * windows[-1].end[1]
+    delta = windows_gt[0].start[1].inverse() * windows_gt[-1].end[1]
     print(f"Amount Moved: {delta.trans}")
-    print(f"Number of Windows: {len(windows)}")
+    print(f"Number of Windows: {len(windows_gt)}")
     print()
 
     timeit(estimate_gyro_naive)(all_mm[:one_sec_imu])
-    timeit(estimate_gyro_graph)(windows)
-    gyro_bias = timeit(estimate_gyro_linear)(windows)
+    gyro_bias = timeit(func=estimate_gyro_linear)(windows_gt)
+    gyro_bias = timeit(func=estimate_gyro_linear)(windows_form)
     gyro_bias = cast(Array, gyro_bias)
     print()
 
     b_naive, g_naive = timeit(estimate_accel_naive)(
-        all_mm[:one_sec_imu], windows[0].start[1]
+        all_mm[:one_sec_imu], windows_gt[0].start[1]
     )
-    timeit(estimate_accel_p_only)(windows, gyro_bias, g_naive, 1e-1)
-    timeit(estimate_accel_v_only)(windows, gyro_bias, g_naive, 1e-1)
-    timeit(estimate_accel_p_only)(windows, gyro_bias, g_naive)
-    timeit(estimate_accel_v_only)(windows, gyro_bias, g_naive)
-    timeit(estimate_accel_p_cpp)(windows, gyro_bias, g_naive)
+    timeit(estimate_accel_p_cpp)(windows_gt, gyro_bias, g_naive, 5e1)
+    timeit(estimate_accel_p_cpp)(windows_form, gyro_bias, g_naive, 5e1)
+    timeit(estimate_accel_v_only)(windows_gt, gyro_bias, g_naive, 5e-1)
+    timeit(estimate_accel_v_only)(windows_form, gyro_bias, g_naive, 5e-1)
 
     # ------------------------- Plot ------------------------- #
-    one_sec_windows = int(1.0 / every)
-    priors = [None, 1e2, 5e1, 1e1]
+    one_sec_windows = int(1.0 / data.lidar_params().rate)
 
-    bias = np.zeros((len(priors), len(windows) - one_sec_windows, 3))
-    grav = np.zeros((len(priors), len(windows) - one_sec_windows, 3))
+    bias = np.zeros((2, len(windows_gt) - one_sec_windows, 3))
+    grav = np.zeros((2, len(windows_gt) - one_sec_windows, 3))
 
-    for j, p in tqdm(enumerate(priors), total=len(priors)):
-        for i in range(one_sec_windows, len(windows)):
-            b, g = estimate_accel_p_cpp(windows[:i], gyro_bias, g_naive, p)
-            bias[j, i - one_sec_windows] = b
-            grav[j, i - one_sec_windows] = g.point3()
+    for i in tqdm(range(one_sec_windows, len(windows_gt))):
+        b, g = estimate_accel_p_cpp(windows_gt[:i], gyro_bias, g_naive, 5e1)
+        bias[0, i - one_sec_windows] = b
+        grav[0, i - one_sec_windows] = g.point3()
+
+        b, g = estimate_accel_p_cpp(windows_form[:i], gyro_bias, g_naive, 5e1)
+        bias[1, i - one_sec_windows] = b
+        grav[1, i - one_sec_windows] = g.point3()
 
     from matplotlib import pyplot as plt
 
     fig, ax = plt.subplots(2, 4, figsize=(12, 6), sharex=True, layout="constrained")
 
-    t = np.arange(bias.shape[1]) * every
+    t = np.arange(bias.shape[1]) / data.lidar_params().rate
 
     ax[0, 3].plot(t, delta_angles[one_sec_windows:], label="Delta Angle Change")
     ax[0, 3].set_title("Delta Angle Change Over Time")
@@ -550,10 +568,12 @@ if __name__ == "__main__":
         ax[1, i].set_title(f"Gravity {['X', 'Y', 'Z'][i]}")
         ax[1, i].grid()
 
-        for j in range(len(priors)):
-            ax[0, i].plot(t, bias[j, :, i], label="Prior: " + str(priors[j]))
-            ax[1, i].plot(t, grav[j, :, i])
+        ax[0, i].plot(t, bias[0, :, i], label="GT Poses")
+        ax[1, i].plot(t, grav[0, :, i])
+
+        ax[0, i].plot(t, bias[1, :, i], label="Form Poses")
+        ax[1, i].plot(t, grav[1, :, i])
 
     ax[0, 0].legend()
 
-    plt.savefig(f"scripts/{data.full_name.replace('/', '_')}_bg_convergence.png")
+    plt.savefig(f"scripts/{data.full_name.replace('/', '_')}_bg_form.png")
