@@ -150,6 +150,28 @@ ImuHandler::compute_gravity_alignment() noexcept {
   m_params.preintegration->n_gravity =
       world_T_imu.rotation().unrotate(imu_gravity_normed);
 
+  // // blenheim palace values
+  // // from ground truth poses
+  // m_params.preintegration->n_gravity = gtsam::Vector3(-0.066, -0.068, -0.995)
+  // * 9.81; bias_accel = gtsam::Vector3(0.05, -0.009, -0.149); body_gyro =
+  // gtsam::Vector3(0.005, 0.001, 0.);
+  // // from FORM poses
+  // m_params.preintegration->n_gravity = gtsam::Vector3(-0.027, -0.08, -0.996)
+  // * 9.81; bias_accel = gtsam::Vector3(0.183, -0.285, -0.117);
+  // body_gyro = gtsam::Vector3(0.005, 0.001, 0.);
+
+  // short_experiment values
+  // from FORM poses - gt/FORM results are similar
+  // m_params.preintegration->n_gravity = gtsam::Vector3(0.01, 0.01, -1.0) * 9.81;
+  // bias_accel = gtsam::Vector3(-0.308, -0.169, 0.067);
+  // body_gyro = gtsam::Vector3(-0.019, -0.031, 0.005);
+
+  // multi_campus/tuhh_night_09 values
+  // from GT poses
+  m_params.preintegration->n_gravity = gtsam::Vector3(0.084, 0.016, 0.996) * 9.81;
+  bias_accel = gtsam::Vector3(-0.03, 0.093, 0.261);
+  body_gyro = gtsam::Vector3(-0.001, 0., -0.008);
+
   const gtsam::imuBias::ConstantBias imu_bias(bias_accel, body_gyro);
 
   return std::make_pair(world_T_imu, imu_bias);
