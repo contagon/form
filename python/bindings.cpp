@@ -1,5 +1,6 @@
 #include "evalio/convert/base.h"
 #include "evalio/convert/eigen.h"
+#include "evalio/convert/gtsam.h"
 #include "evalio/macros.h"
 #include "evalio/pipeline.h"
 #include "evalio/types.h"
@@ -32,79 +33,50 @@ namespace ev = evalio;
 
 // ------------------------- Helpers ------------------------- //
 namespace evalio {
-// Poses
-template <> gtsam::Pose3 convert(const ev::SE3 &pose) {
-  return gtsam::Pose3(gtsam::Rot3(pose.rot.toEigen()), gtsam::Point3(pose.trans));
-}
 
-template <> ev::SE3 convert(const gtsam::Pose3 &pose) {
-  return ev::SE3(ev::SO3::fromEigen(pose.rotation().toQuaternion()),
-                 pose.translation());
-}
-
-// Points
-template <> form::PointXYZf convert(const ev::Point &point) {
-  return form::PointXYZf(point.x, point.y, point.z);
-}
-
-template <> ev::Point convert(const form::PointFeat &point) {
+template <> inline Point convert(const form::PointFeat &in) {
   return {
-      .x = point.x,
-      .y = point.y,
-      .z = point.z,
+      .x = in.x,
+      .y = in.y,
+      .z = in.z,
       .intensity = 0.0,
-      .t = ev::Duration::from_sec(0),
+      .t = Duration::from_sec(0),
       .row = 0,
-      .col = static_cast<uint16_t>(point.scan),
+      .col = static_cast<uint16_t>(in.scan),
   };
 }
 
-template <> ev::Point convert(const form::PlanarFeat &point) {
+template <> inline Point convert(const form::PlanarFeat &in) {
   return {
-      .x = point.x,
-      .y = point.y,
-      .z = point.z,
+      .x = in.x,
+      .y = in.y,
+      .z = in.z,
       .intensity = 0.0,
-      .t = ev::Duration::from_sec(0),
+      .t = Duration::from_sec(0),
       .row = 0,
-      .col = static_cast<uint16_t>(point.scan),
+      .col = static_cast<uint16_t>(in.scan),
   };
 }
 
-// imu
-template <> form::Imu convert(const ev::ImuMeasurement &mm) {
-  return form::Imu{
-      .stamp = form::Stamp{.sec = mm.stamp.sec, .nsec = mm.stamp.nsec},
-      .gyro = mm.gyro,
-      .acc = mm.accel,
+template <> inline form::PointXYZf convert(const Point &in) {
+  return {
+      static_cast<float>(in.x),
+      static_cast<float>(in.y),
+      static_cast<float>(in.z),
   };
-}
-
-// stamps
-template <> form::Stamp convert(const ev::Stamp &stamp) {
-  return form::Stamp{.sec = stamp.sec, .nsec = stamp.nsec};
-}
-
-template <> ev::Stamp convert(const form::Stamp &stamp) {
-  return ev::Stamp{.sec = stamp.sec, .nsec = stamp.nsec};
 }
 
 } // namespace evalio
 
-// ------------------------- Pipelines ------------------------- //
-class FORM : public evalio::Pipeline {
+// ------------------------- Pipeline ------------------------- //
+class FORMDev : public ev::Pipeline {
 public:
-  FORM() : evalio::Pipeline(), params_(), estimator_() {}
+  FORMDev() : estimator_(), params_() {}
 
-  form::Estimator estimator_;
-  form::Estimator::Params params_;
+  // Info
+  static std::string version() { return "0.2.0"; } // x-release-please-version
 
-  // helper params
-  gtsam::Pose3 lidar_T_imu_ = gtsam::Pose3::Identity();
-  evalio::Duration delta_time_;
-
-  // ------------------------- Info ------------------------- //
-  static std::string name() { return "form"; }
+  static std::string name() { return "form-dev"; }
 
   static std::string url() { return "https://github.com/rpl-cmu/form"; }
 
@@ -128,188 +100,56 @@ public:
     (int,     max_num_recent_scans,  10, params_.scans.max_num_recent_scans),
     (int, max_steps_unused_keyscan,  10, params_.scans.max_steps_unused_keyscan),
     (double,    keyscan_match_ratio, 0.1, params_.scans.keyscan_match_ratio),
-    (double,           max_dist_map, 0.1, params_.map.min_dist_map),
+    (double,           min_dist_map, 0.1, params_.map.min_dist_map),
     // misc
     (int, num_threads, 0, params_.num_threads)
   );
   // clang-format on
 
-  // ------------------------- Getters ------------------------- //
-  const std::map<std::string, std::vector<evalio::Point>> map() override {
-    const auto [planar, point] =
-        form::tuple::transform(estimator_.m_keypoint_map, [&](auto &map) {
-          return map.to_vector(estimator_.m_constraints.get_values());
-        });
-
-    return evalio::make_map("planar", planar, "point", point);
-  }
-
-  // ------------------------- Setters ------------------------- //
-  // Set the IMU parameters
-  void set_imu_params(evalio::ImuParams params) override {}
-
-  // Set the LiDAR parameters
-  void set_lidar_params(evalio::LidarParams params) override {
-    params_.extraction.min_norm_squared = params.min_range * params.min_range;
-    params_.extraction.max_norm_squared = params.max_range * params.max_range;
-    params_.extraction.num_columns = params.num_columns;
-    params_.extraction.num_rows = params.num_rows;
-    delta_time_ = params.delta_time();
-  }
-
-  // Set the transformation from IMU to LiDAR
-  void set_imu_T_lidar(evalio::SE3 T) override {
-    lidar_T_imu_ = ev::convert<gtsam::Pose3>(T).inverse();
-  }
-
-  // ------------------------- Doers ------------------------- //
-  // Initialize the pipeline
-  void initialize() override { estimator_ = form::Estimator(params_); }
-
-  // Add an IMU measurement
-  void add_imu(evalio::ImuMeasurement mm) override {}
-
-  // Add a LiDAR measurement
-  void add_lidar(evalio::LidarMeasurement mm) override {
-    // convert to evalio
-    auto scan = ev::convert_iter<std::vector<form::PointXYZf>>(mm.points);
-
-    // run the estimator & save results
-    auto [planar_kp, point_kp] = estimator_.register_scan(scan);
-    this->save(mm.stamp, estimator_.current_lidar_estimate() * lidar_T_imu_);
-
-    // extract the keypoints
-    this->save(mm.stamp, "planar", planar_kp, "point", point_kp);
-    std::map<std::string, std::vector<evalio::Point>> points = {{"planar", {}},
-                                                                {"point", {}}};
-  }
-};
-
-class FORMInertial : public ev::Pipeline {
-public:
-  FORMInertial() : ev::Pipeline(), params_() {}
-
-  // must be a shared ptr due to mutex in imu class
-  std::shared_ptr<form::InertialEstimator> estimator_;
-  form::InertialEstimator::Params params_;
-  ev::SE3 last_integrated_imu_ = ev::SE3::identity();
-
-  // helper params
-  ev::Duration delta_time_;
-
-  // ------------------------- Info ------------------------- //
-  static std::string name() { return "form-inertial"; }
-
-  static std::string url() { return "https://github.com/rpl-cmu/form"; }
-
-  // clang-format off
-  EVALIO_SETUP_PARAMS(
-    // FEATURE EXTRACTION
-    (int,         neighbor_points,   5, params_.extraction.neighbor_points),
-    (int,             num_sectors,   6, params_.extraction.num_sectors),
-    (double,     planar_threshold, 1.0, params_.extraction.planar_threshold),
-    (int, planar_feats_per_sector,  50, params_.extraction.planar_feats_per_sector),
-    (int,  point_feats_per_sector,   3, params_.extraction.point_feats_per_sector),
-    (double,               radius, 1.0, params_.extraction.radius),
-    (int,              min_points,   5, params_.extraction.min_points),
-    // OPTIMIZATION
-    (double,  max_dist_matching,   0.8, params_.matcher.max_dist_matching),
-    (double, new_pose_threshold,  1e-4, params_.matcher.new_pose_threshold),
-    (int,     max_num_rematches,    30, params_.matcher.max_num_rematches),
-    (bool,    disable_smoothing, false, params_.constraints.disable_smoothing),
-    (double,       planar_sigma,   0.1, params_.constraints.planar_constraint_sigma),
-    (double,        prior_scale,   1.0, params_.constraints.prior_scale),
-    // MAPPING
-    (int,         max_num_keyscans,   50, params_.scans.max_num_keyscans),
-    (int,     max_num_recent_scans,   10, params_.scans.max_num_recent_scans),
-    (int, max_steps_unused_keyscan,   10, params_.scans.max_steps_unused_keyscan),
-    (double,    keyscan_match_ratio, 0.1, params_.scans.keyscan_match_ratio),
-    (double,           max_dist_map, 0.1, params_.map.min_dist_map),
-    // misc
-    (int, num_threads,     0, params_.num_threads),
-  );
-  // clang-format on
-
-  // ------------------------- Getters ------------------------- //
-  // Returns the current submap of the environment
+  // Getters
   const std::map<std::string, std::vector<ev::Point>> map() override {
-    const auto [planar, point] =
-        form::tuple::transform(estimator_->m_keypoint_map, [&](auto &map) {
-          return map.to_vector(estimator_->m_constraints.get_values());
-        });
+    const auto planar = std::get<0>(estimator_.m_keypoint_map)
+                            .to_vector(estimator_.m_constraints.get_values());
+    const auto point = std::get<1>(estimator_.m_keypoint_map)
+                           .to_vector(estimator_.m_constraints.get_values());
 
-    return evalio::make_map("planar", planar, "point", point);
+    return ev::make_map("planar", planar, "point", point);
   }
 
-  // ------------------------- Setters ------------------------- //
-  // Set the IMU parameters
-  void set_imu_params(ev::ImuParams params) override {
-    auto cov3 = [](double std) { return std * std * Eigen::Matrix3d::Identity(); };
-    auto cov6 = [](double std) {
-      return std * std * Eigen::Matrix<double, 6, 6>::Identity();
-    };
-    params_.imu.preintegration->gyroscopeCovariance = cov3(params.gyro);
-    params_.imu.preintegration->accelerometerCovariance = cov3(params.accel);
-    params_.imu.preintegration->biasOmegaCovariance = cov3(params.gyro_bias);
-    params_.imu.preintegration->biasAccCovariance = cov3(params.accel_bias);
-    params_.imu.preintegration->integrationCovariance = cov3(params.integration);
-    params_.imu.preintegration->biasAccOmegaInt = cov6(params.bias_init);
-  }
+  // Setters
+  void set_imu_params(ev::ImuParams params) override {}
 
-  // Set the LiDAR parameters
   void set_lidar_params(ev::LidarParams params) override {
     params_.extraction.min_norm_squared = params.min_range * params.min_range;
     params_.extraction.max_norm_squared = params.max_range * params.max_range;
     params_.extraction.num_columns = params.num_columns;
     params_.extraction.num_rows = params.num_rows;
-    delta_time_ = params.delta_time();
   }
 
-  // Set the transformation from IMU to LiDAR
   void set_imu_T_lidar(ev::SE3 T) override {
-    params_.imu.imu_T_lidar = ev::convert<gtsam::Pose3>(T);
+    lidar_T_imu_ = ev::convert<gtsam::Pose3>(T).inverse();
   }
 
-  // ------------------------- Doers ------------------------- //
-  // Initialize the pipeline
-  void initialize() override {
-    // Make sure prior scale is set
-    params_.constraints.set_scale();
-    estimator_ = std::make_shared<form::InertialEstimator>(params_);
-  }
+  // Doers
+  void initialize() override { estimator_ = form::Estimator(params_); }
 
-  // Add an IMU measurement
-  void add_imu(ev::ImuMeasurement mm) override {
-    auto result = estimator_->register_imu(ev::convert<form::Imu>(mm));
-    if (result.has_value()) {
-      last_integrated_imu_ = ev::convert<ev::SE3>(result.value().data.pose());
-    }
-  }
+  void add_imu(ev::ImuMeasurement mm) override {}
 
-  ev::SE3 get_last_integrated_imu() { return last_integrated_imu_; }
-
-  Eigen::Matrix<double, 6, 1> current_imu_bias() {
-    return estimator_->m_constraints.get_current_bias().vector();
-  }
-
-  // Add a LiDAR measurement
   void add_lidar(ev::LidarMeasurement mm) override {
-    // convert to evalio
-    auto scan = ev::convert_iter<std::vector<form::PointXYZf>>(mm.points);
-    // send a stamp that is at the end of the scan
-    auto end = ev::convert<form::Stamp>(mm.stamp + delta_time_);
+    const auto scan = ev::convert_iter<std::vector<form::PointXYZf>>(mm.points);
 
-    // Add in the scan
-    estimator_->register_scan(scan, end);
+    auto [planar_kp, point_kp] = estimator_.register_scan(scan);
 
-    // Process any pending scans
-    for (const auto &[stamp, pose, planar_kp, point_kp] :
-         estimator_->process_pending()) {
-      auto ev_stamp = ev::convert<ev::Stamp>(stamp) - delta_time_;
-      this->save(ev_stamp, "planar", planar_kp, "point", point_kp);
-      this->save(ev_stamp, pose);
-    }
+    this->save(mm.stamp, estimator_.current_lidar_estimate() * lidar_T_imu_);
+    this->save(mm.stamp, "planar", planar_kp, "point", point_kp);
   }
+
+private:
+  form::Estimator estimator_;
+  form::Estimator::Params params_;
+
+  gtsam::Pose3 lidar_T_imu_ = gtsam::Pose3::Identity();
+  ev::SE3 current_pose_ = ev::SE3::identity();
 };
 
 NB_MODULE(_core, m) {
@@ -323,11 +163,11 @@ NB_MODULE(_core, m) {
 
   // Only have to override the static methods here
   // All the others will be automatically inherited from the base class
-  nb::class_<FORM, evalio::Pipeline>(m, "FORM")
+  nb::class_<FORMDev, evalio::Pipeline>(m, "FORMDev")
       .def(nb::init<>())
-      .def_static("name", &FORM::name)
-      .def_static("url", &FORM::url)
-      .def_static("default_params", &FORM::default_params);
+      .def_static("name", &FORMDev::name)
+      .def_static("url", &FORMDev::url)
+      .def_static("default_params", &FORMDev::default_params);
 
   nb::class_<FORMInertial, ev::Pipeline>(m, "FORMInertial")
       .def(nb::init<>())
