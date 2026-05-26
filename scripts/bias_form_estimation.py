@@ -13,7 +13,13 @@ from evalio.types.base import M
 
 sys.path.append(".")
 from imu_sim import Array
-from form import gtsam, GravityBiasPreintFactor, FORM
+from form import (
+    OxfordSpiresCustom,
+    gtsam,
+    GravityBiasPreintFactor,
+    FORM,
+    MultiCampusCustom,
+)
 import numpy as np
 
 np.set_printoptions(precision=3, suppress=True)
@@ -53,7 +59,7 @@ def timeit(
                 g_naive = args[2]
                 cos = result[1].point3().dot(g_naive.point3())
                 angle = np.arccos(cos) * 180.0 / np.pi
-                result_str = f"{result[0]}, {angle:.3f}°"
+                result_str = f"{result[0]}, {result[1].point3()}, {angle:.3f}°"
             else:
                 result_str = f"{result[0]}"
         else:
@@ -449,13 +455,17 @@ def estimate_accel_naive(
 
 
 if __name__ == "__main__":
-    data = ds.OxfordSpires.blenheim_palace_05
-    data = ds.OxfordSpires.christ_church_01
-    data = ds.OxfordSpires.blenheim_palace_02
-    length = 60.0
+    # data = ds.OxfordSpires.blenheim_palace_05
+    # data = ds.OxfordSpires.christ_church_01
+    # data = ds.OxfordSpires.blenheim_palace_02
+    # data = OxfordSpiresCustom.blenheim_palace_02
+    # length = 30.0
 
     # data = ds.NewerCollege2020.short_experiment
     # length = 80.0
+
+    data = MultiCampusCustom.tuhh_night_09
+    length = 30.0
 
     out = ty.Experiment.from_pl_ds(FORM, data).setup()
     if isinstance(out, Exception):
@@ -492,6 +502,10 @@ if __name__ == "__main__":
 
     # align them
     st.align(form_traj, gt_traj, True)
+    start = form_traj.poses[0].inverse()
+    for i in range(len(form_traj.poses)):
+        form_traj.poses[i] = start * form_traj.poses[i]
+        gt_traj.poses[i] = start * gt_traj.poses[i]
 
     all_mm, windows_gt = summarize_windows(data, gt_traj)
     all_mm, windows_form = summarize_windows(data, form_traj)
@@ -525,6 +539,7 @@ if __name__ == "__main__":
     timeit(estimate_accel_p_cpp)(windows_form, gyro_bias, g_naive, 5e1)
     timeit(estimate_accel_v_only)(windows_gt, gyro_bias, g_naive, 5e-1)
     timeit(estimate_accel_v_only)(windows_form, gyro_bias, g_naive, 5e-1)
+    # quit()
 
     # ------------------------- Plot ------------------------- #
     one_sec_windows = int(1.0 / data.lidar_params().rate)

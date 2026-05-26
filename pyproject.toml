@@ -36,5 +36,5 @@ CMAKE_BUILD_TYPE = "Release"
 typeCheckingMode = "standard"
 include = ["python"]
 
-[tool.uv.sources]
-evalio = { path = "../evalio" }
+# [tool.uv.sources]
+# evalio = { path = "../evalio" }

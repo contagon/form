@@ -1,6 +1,7 @@
 from typing import cast
 from evalio import datasets as ds, types as ty
-from form import FORM, OxfordSpiresCustom
+from form import FORMInertial, OxfordSpiresCustom
+from form.multi_campus import MultiCampusCustom
 import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
@@ -10,17 +11,19 @@ num_lidar = 500
 num_after = 50
 
 dataset = OxfordSpiresCustom.blenheim_palace_02
+# dataset = ds.OxfordSpires.blenheim_palace_02
+dataset = MultiCampusCustom.tuhh_night_09
 
 # setup
-exp = ty.Experiment.from_pl_ds(FORM, dataset)
+exp = ty.Experiment.from_pl_ds(FORMInertial, dataset)
 exp.pipeline_params["planar_sigma"] = 0.01
 exp.pipeline_params["prior_scale"] = 0.1
-exp.pipeline_params["fuse_imu"] = True
+exp.pipeline_params["point_feats_per_sector"] = 0
 out = exp.setup()
 if isinstance(out, Exception):
     raise out
 pipe, data = out
-pipe = cast(FORM, pipe)
+pipe = cast(FORMInertial, pipe)
 
 # run
 imu_estimates: list[ty.SE3] = []

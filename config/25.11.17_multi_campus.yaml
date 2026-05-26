@@ -1,18 +1,21 @@
 pipelines:
   - pipeline: form-inertial
-    name: form_init_tighter_prior3
-    point_feats_per_sector: 0
-    prior_scale: 0.001
+    name: gt_init_slict
+    prior_scale: 0.005
     planar_sigma: 0.01
+    point_feats_per_sector: 0
 
   - pipeline: form
     name: lo_planar
     point_feats_per_sector: 0
+
+  - pipeline: form
+    name: lo_full
 
 datasets:
   # - name: oxford_spires_custom/blenheim_palace_02
   #   length: 6000
   # - name: oxford_spires_custom/blenheim_palace_02
   #   length: 6000
-  - name: newer_college_2020/short_experiment
-    length: 2000
+  - name: multi_campus_custom/tuhh_night_09
+    length: 6000
