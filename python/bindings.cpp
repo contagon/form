@@ -194,6 +194,8 @@ public:
     (double, new_pose_threshold,  1e-4, params_.matcher.new_pose_threshold),
     (int,     max_num_rematches,    30, params_.matcher.max_num_rematches),
     (bool,    disable_smoothing, false, params_.constraints.disable_smoothing),
+    (double,       planar_sigma,   0.1, params_.constraints.planar_constraint_sigma),
+    (double,        prior_scale,   1.0, params_.constraints.prior_scale),
     // MAPPING
     (int,         max_num_keyscans,  50, params_.scans.max_num_keyscans),
     (int,     max_num_recent_scans,  10, params_.scans.max_num_recent_scans),

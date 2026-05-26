@@ -1,0 +1,7 @@
+pipelines:
+  - pipeline: form-inertial-dev
+
+datasets:
+  # ncd20
+  - name: newer_college_2020/short_experiment
+    length: 1000
