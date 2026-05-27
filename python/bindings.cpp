@@ -157,7 +157,13 @@ public:
 
     auto [planar_kp, point_kp] = estimator_.register_scan(scan);
 
-    this->save(mm.stamp, estimator_.current_lidar_estimate() * lidar_T_imu_);
+    // Right multiply to put back into IMU frame
+    // Left multiply to make x0 be identity (since the first estimate is always
+    // identity)
+    auto pose =
+        lidar_T_imu_.inverse() * estimator_.current_lidar_estimate() * lidar_T_imu_;
+
+    this->save(mm.stamp, pose);
     this->save(mm.stamp, "planar", planar_kp, "point", point_kp);
   }
 

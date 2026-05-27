@@ -44,7 +44,7 @@ public:
   struct Params {
     /// @brief Initial required number of IMU measurements to compute gravity
     /// alignment
-    size_t initial_quota = 200;
+    size_t initial_quota = 400;
 
     /// @brief Preintegration parameters
     boost::shared_ptr<gtsam::PreintegrationCombinedParams> preintegration =
